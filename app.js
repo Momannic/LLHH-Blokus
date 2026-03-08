@@ -23,14 +23,14 @@ const {
 } = engine;
 
 const {
-  createSupabaseClient,
-  ensureAnonymousAuth,
-  createRoom,
-  joinRoom,
-  loadRoom,
-  updateRoomState,
-  subscribeToRoom,
-  insertMove,
+  createSupabaseClient: sbCreateSupabaseClient,
+  ensureAnonymousAuth: sbEnsureAnonymousAuth,
+  createRoom: sbCreateRoom,
+  joinRoom: sbJoinRoom,
+  loadRoom: sbLoadRoom,
+  updateRoomState: sbUpdateRoomState,
+  subscribeToRoom: sbSubscribeToRoom,
+  insertMove: sbInsertMove,
 } = supabaseApi || {};
 
 const PIECE_LONG_PRESS_MS = 420;
@@ -1046,7 +1046,7 @@ async function syncRoomFromServer(message) {
     return;
   }
 
-  const latest = await loadRoom(state.network.client, state.network.roomId);
+  const latest = await sbLoadRoom(state.network.client, state.network.roomId);
   if (!latest) {
     throw new Error("房间不存在或已删除");
   }
@@ -1109,7 +1109,7 @@ async function placePiece() {
       updated_at: new Date().toISOString(),
     };
 
-    const updatedRoom = await updateRoomState(
+    const updatedRoom = await sbUpdateRoomState(
       state.network.client,
       state.network.roomId,
       payload,
@@ -1121,8 +1121,8 @@ async function placePiece() {
       fromRealtime: false,
     });
 
-    if (typeof insertMove === "function") {
-      insertMove(state.network.client, {
+    if (typeof sbInsertMove === "function") {
+      sbInsertMove(state.network.client, {
         roomId: state.network.roomId,
         turnNumber: state.game.turnCount - 1,
         color: localResult.placedColor,
@@ -1393,11 +1393,11 @@ function applyRoomSnapshot(room, options = {}) {
 function subscribeCurrentRoom(roomId) {
   clearRoomSubscription();
 
-  if (!state.network.client || !roomId || typeof subscribeToRoom !== "function") {
+  if (!state.network.client || !roomId || typeof sbSubscribeToRoom !== "function") {
     return;
   }
 
-  state.network.unsubscribeRoom = subscribeToRoom(state.network.client, roomId, (nextRoom) => {
+  state.network.unsubscribeRoom = sbSubscribeToRoom(state.network.client, roomId, (nextRoom) => {
     applyRoomSnapshot(nextRoom, { fromRealtime: true });
   });
 }
@@ -1414,8 +1414,8 @@ async function ensureNetworkReady() {
   }
 
   if (
-    typeof createSupabaseClient !== "function" ||
-    typeof ensureAnonymousAuth !== "function"
+    typeof sbCreateSupabaseClient !== "function" ||
+    typeof sbEnsureAnonymousAuth !== "function"
   ) {
     state.message = "Supabase 接口未完整初始化";
     render();
@@ -1423,8 +1423,8 @@ async function ensureNetworkReady() {
   }
 
   try {
-    const client = await createSupabaseClient();
-    const user = await ensureAnonymousAuth(client);
+    const client = await sbCreateSupabaseClient();
+    const user = await sbEnsureAnonymousAuth(client);
 
     state.network.client = client;
     state.network.userId = user.id;
@@ -1458,7 +1458,7 @@ async function createOnlineRoom() {
 
   try {
     const initialGame = createInitialGameState();
-    const room = await createRoom(state.network.client, {
+    const room = await sbCreateRoom(state.network.client, {
       hostUserId: state.network.userId,
       status: "waiting",
       currentTurnColor: initialGame.currentTurnColor,
@@ -1496,7 +1496,7 @@ async function joinOrLoadRoomByUrl() {
   render();
 
   try {
-    const room = await joinRoom(state.network.client, roomId, state.network.userId);
+    const room = await sbJoinRoom(state.network.client, roomId, state.network.userId);
     setRoomIdToUrl(room.id);
     subscribeCurrentRoom(room.id);
     applyRoomSnapshot(room, {
