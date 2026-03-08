@@ -56,6 +56,13 @@ const ROOM_STATUS_LABEL = {
   finished: "已结束",
 };
 
+const CORNER_BY_COLOR = {
+  blue: { row: 0, col: 0 },
+  yellow: { row: 0, col: BOARD_SIZE - 1 },
+  red: { row: BOARD_SIZE - 1, col: BOARD_SIZE - 1 },
+  green: { row: BOARD_SIZE - 1, col: 0 },
+};
+
 const state = {
   game: createInitialGameState(),
   selectedPieceId: null,
@@ -87,6 +94,11 @@ const state = {
     rotation: 0,
     flipped: false,
   },
+  floatingPreviewPos: {
+    active: false,
+    clientX: 0,
+    clientY: 0,
+  },
   network: {
     ready: false,
     initializing: false,
@@ -102,6 +114,7 @@ const state = {
   },
   dom: {
     board: null,
+    boardArea: null,
     piecePool: null,
     pieceCards: new Map(),
     pieceGrids: new Map(),
@@ -252,6 +265,18 @@ function syncSerializedState() {
   state.serializedGameState = serializeGameState(state.game);
 }
 
+function clearFloatingPreviewPosition() {
+  state.floatingPreviewPos.active = false;
+  state.floatingPreviewPos.clientX = 0;
+  state.floatingPreviewPos.clientY = 0;
+}
+
+function updateFloatingPreviewPositionFromPointer(event) {
+  state.floatingPreviewPos.active = true;
+  state.floatingPreviewPos.clientX = event.clientX;
+  state.floatingPreviewPos.clientY = event.clientY;
+}
+
 function clearPiecePoolGestureState() {
   if (state.piecePoolGesture.timerId !== null) {
     clearTimeout(state.piecePoolGesture.timerId);
@@ -297,6 +322,7 @@ function clearTransientSelection() {
   state.selectedFlipped = false;
   state.previewAnchor = null;
   state.preview = null;
+  clearFloatingPreviewPosition();
   state.boardPointer.active = false;
   state.boardPointer.pointerId = null;
 }
@@ -485,16 +511,23 @@ function syncSelectedPieceMiniPreview() {
 }
 
 function renderPiecePool() {
+  const currentTurnColor = getCurrentTurnColor();
+
   TURN_ORDER.forEach((color) => {
     const section = state.dom.pieceSections.get(color);
     if (!section) {
       return;
     }
 
-    const isActive = color === getCurrentTurnColor();
+    const isActive = color === currentTurnColor;
     section.classList.toggle("is-active", isActive);
     section.classList.toggle("is-inactive", !isActive);
+    section.classList.toggle("is-hidden", !isActive);
   });
+
+  if (state.dom.ui.piecePoolHint) {
+    state.dom.ui.piecePoolHint.textContent = `当前为${COLOR_LABEL[currentTurnColor]}色回合`;
+  }
 
   state.game.pieces.forEach((piece) => {
     const card = state.dom.pieceCards.get(piece.pieceId);
@@ -547,13 +580,17 @@ function maybeAutoScrollCurrentTurnSection() {
 function renderFloatingPreview() {
   const floating = state.dom.floatingPiece;
   const floatingGrid = state.dom.floatingPieceGrid;
-  if (!floating || !floatingGrid) {
+  const boardArea = state.dom.boardArea;
+
+  if (!floating || !floatingGrid || !boardArea) {
     return;
   }
 
-  if (!state.selectedPieceId || state.game.gameOver) {
+  if (!state.selectedPieceId || state.game.gameOver || !state.floatingPreviewPos.active) {
     floating.classList.remove("is-visible");
     floatingGrid.innerHTML = "";
+    floating.style.left = "";
+    floating.style.top = "";
     return;
   }
 
@@ -571,6 +608,40 @@ function renderFloatingPreview() {
   );
 
   drawMiniShapeFromPoints(floatingGrid, transformed, selectedPiece.color);
+
+  const viewportPadding = 8;
+  const pointerX = state.floatingPreviewPos.clientX;
+  const pointerY = state.floatingPreviewPos.clientY;
+
+  const floatW = floating.offsetWidth || 72;
+  const floatH = floating.offsetHeight || 72;
+  const boardAreaRect = boardArea.getBoundingClientRect();
+
+  let x = pointerX + 28;
+  let y = pointerY - floatH - 18;
+
+  if (x + floatW > window.innerWidth - viewportPadding) {
+    x = pointerX - floatW - 28;
+  }
+  if (x < viewportPadding) {
+    x = viewportPadding;
+  }
+
+  if (y < viewportPadding) {
+    y = pointerY + 22;
+  }
+  if (y + floatH > window.innerHeight - viewportPadding) {
+    y = window.innerHeight - floatH - viewportPadding;
+  }
+
+  let localLeft = x - boardAreaRect.left;
+  let localTop = y - boardAreaRect.top;
+
+  localLeft = Math.max(0, Math.min(localLeft, Math.max(0, boardAreaRect.width - floatW)));
+  localTop = Math.max(0, Math.min(localTop, Math.max(0, boardAreaRect.height - floatH)));
+
+  floating.style.left = `${Math.round(localLeft)}px`;
+  floating.style.top = `${Math.round(localTop)}px`;
   floating.classList.add("is-visible");
 }
 
@@ -637,6 +708,13 @@ function renderPreview() {
       target.classList.add("preview-invalid");
     }
   });
+
+  if (isInBounds(state.preview.anchorRow, state.preview.anchorCol)) {
+    const anchorCell = state.dom.boardCells.get(getCellKey(state.preview.anchorRow, state.preview.anchorCol));
+    if (anchorCell) {
+      anchorCell.classList.add("preview-anchor");
+    }
+  }
 }
 
 function renderBoard() {
@@ -654,6 +732,17 @@ function renderBoard() {
       }
     }
   }
+
+  Object.entries(CORNER_BY_COLOR).forEach(([color, corner]) => {
+    const cornerCell = state.dom.boardCells.get(getCellKey(corner.row, corner.col));
+    if (!cornerCell) {
+      return;
+    }
+
+    cornerCell.classList.add(`start-corner-${color}`);
+    const firstDone = Boolean(state.game.firstMoveDoneByColor?.[color]);
+    cornerCell.classList.add(firstDone ? "start-corner-done" : "start-corner-active");
+  });
 
   renderPreview();
 }
@@ -984,6 +1073,8 @@ function startBoardPointerTracking(event) {
 
   state.boardPointer.active = true;
   state.boardPointer.pointerId = event.pointerId;
+  updateFloatingPreviewPositionFromPointer(event);
+  renderFloatingPreview();
 
   if (state.dom.board.setPointerCapture) {
     try {
@@ -1002,6 +1093,8 @@ function handleBoardPointerMove(event) {
     return;
   }
 
+  updateFloatingPreviewPositionFromPointer(event);
+  renderFloatingPreview();
   updatePreviewFromPointer(event);
   event.preventDefault();
 }
@@ -1021,6 +1114,8 @@ function stopBoardPointerTracking(event) {
 
   state.boardPointer.active = false;
   state.boardPointer.pointerId = null;
+  clearFloatingPreviewPosition();
+  renderFloatingPreview();
 }
 
 function buildPlaceSuccessMessage(result, move) {
@@ -1564,6 +1659,7 @@ function bindEvents() {
 
 function cacheDom() {
   state.dom.board = document.getElementById("board");
+  state.dom.boardArea = document.querySelector(".board-area");
   state.dom.piecePool = document.getElementById("piecePool");
   state.dom.floatingPiece = document.getElementById("floatingPiece");
   state.dom.floatingPieceGrid = document.getElementById("floatingPieceGrid");
@@ -1609,6 +1705,7 @@ function cacheDom() {
     roomStatus: document.getElementById("roomStatus"),
     roomCanAct: document.getElementById("roomCanAct"),
     roomHint: document.getElementById("roomHint"),
+    piecePoolHint: document.getElementById("piecePoolHint"),
   };
 }
 
