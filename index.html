@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <title>Blokus Mobile UI</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <div class="rotate-hint" id="rotateHint">
+        <div class="rotate-card">
+          <h1>请横屏体验</h1>
+          <p>Blokus UI 已针对手机横屏布局优化</p>
+        </div>
+      </div>
+
+      <section class="main-shell">
+        <aside class="panel left-panel">
+          <header class="panel-header">
+            <h2>拼块池</h2>
+            <p>当前玩家可用拼块</p>
+          </header>
+
+          <div class="piece-pool" id="piecePool"></div>
+        </aside>
+
+        <main class="board-area" aria-label="20x20棋盘区域">
+          <div class="board-frame">
+            <div id="board" class="board" role="grid" aria-label="Blokus 20x20 board"></div>
+          </div>
+          <div class="floating-piece" id="floatingPiece" aria-hidden="true">
+            <div id="floatingPieceGrid" class="piece-grid"></div>
+          </div>
+        </main>
+
+        <aside class="panel right-panel">
+          <header class="panel-header">
+            <h2>信息面板</h2>
+            <p>占位数据</p>
+          </header>
+
+          <section class="info-card room-card" id="roomCard">
+            <h3>在线房间</h3>
+            <p id="roomCode">房间号：未加入</p>
+            <p id="roomRole">我的身份：未加入</p>
+            <p id="roomStatus">房间状态：未连接</p>
+            <p id="roomCanAct">当前是否轮到我：否</p>
+            <p id="roomHint">无 room 参数时请先创建房间</p>
+            <div class="room-actions">
+              <button id="btnCreateRoom" type="button">创建房间</button>
+              <button id="btnCopyRoomLink" type="button">复制房间链接</button>
+            </div>
+          </section>
+
+          <section class="info-card" id="turnCard">
+            <h3>当前回合</h3>
+            <p id="turnPlayer">玩家1</p>
+            <p id="turnNumber">第 1 手</p>
+            <p id="turnColors">当前颜色：蓝</p>
+          </section>
+
+          <section class="info-card" id="selectedCard">
+            <h3>当前选择</h3>
+            <p id="selectedPiece">拼块：无</p>
+            <p id="selectedColor">颜色：无</p>
+            <p id="selectedRotation">旋转：0°</p>
+            <p id="selectedFlip">翻转：否</p>
+          </section>
+
+          <section class="info-card" id="remainCard">
+            <h3>颜色统计</h3>
+            <ul>
+              <li>
+                <span class="dot blue"></span> 蓝：块<span id="remainBlue">0</span>
+                / 已放格<span id="placedBlue">0</span>
+                / 剩余格<span id="cellsRemainBlue">0</span>
+              </li>
+              <li>
+                <span class="dot red"></span> 红：块<span id="remainRed">0</span>
+                / 已放格<span id="placedRed">0</span>
+                / 剩余格<span id="cellsRemainRed">0</span>
+              </li>
+              <li>
+                <span class="dot yellow"></span> 黄：块<span id="remainYellow">0</span>
+                / 已放格<span id="placedYellow">0</span>
+                / 剩余格<span id="cellsRemainYellow">0</span>
+              </li>
+              <li>
+                <span class="dot green"></span> 绿：块<span id="remainGreen">0</span>
+                / 已放格<span id="placedGreen">0</span>
+                / 剩余格<span id="cellsRemainGreen">0</span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="info-card" id="playerScoreCard">
+            <h3>玩家统计</h3>
+            <p id="player1Placed">玩家1得分：0</p>
+            <p id="player1Remain">玩家1剩余格：0</p>
+            <p id="player2Placed">玩家2得分：0</p>
+            <p id="player2Remain">玩家2剩余格：0</p>
+          </section>
+
+          <section class="info-card" id="resultCard">
+            <h3>结算</h3>
+            <p id="resultText">对局进行中</p>
+          </section>
+
+          <section class="info-card" id="statusCard">
+            <h3>状态</h3>
+            <p id="statusText">请选择当前轮到颜色的拼块</p>
+          </section>
+        </aside>
+      </section>
+
+      <footer class="control-panel" aria-label="控制面板">
+        <button id="btnRotate" type="button">旋转</button>
+        <button id="btnFlip" type="button">翻转</button>
+        <button id="btnPlace" type="button" class="ok">放置</button>
+        <button id="btnCancel" type="button" class="danger">取消</button>
+      </footer>
+    </div>
+
+    <script src="engine.js"></script>
+    <script src="supabase.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
