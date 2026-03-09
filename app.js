@@ -37,7 +37,7 @@ const MAGNIFIER_WINDOW_SIZE = MAGNIFIER_RADIUS * 2 + 1;
 const MAGNIFIER_MARGIN = 8;
 const GAME_MODE_TWO_PLAYER = "2p";
 const GAME_MODE_FOUR_PLAYER = "4p";
-const ROOM_GAME_STATE_VERSION = 2;
+const ROOM_GAME_STATE_VERSION = 3;
 const LOBBY_ACTION_NONE = "none";
 const LOBBY_ACTION_CREATE = "create";
 const LOBBY_ACTION_JOIN = "join";
@@ -119,6 +119,14 @@ function createDefaultPlayerNicknameMap(mode) {
   return output;
 }
 
+function createDefaultPlayerReadyMap(mode) {
+  const output = {};
+  getPlayerSeatsByMode(mode).forEach((seat) => {
+    output[seat] = false;
+  });
+  return output;
+}
+
 function normalizePlayerUserMap(map, mode) {
   const output = createEmptyPlayerUserMap(mode);
   if (!map || typeof map !== "object") {
@@ -141,6 +149,18 @@ function normalizePlayerNicknameMap(map, mode) {
   Object.keys(output).forEach((seat) => {
     const value = map[seat];
     output[seat] = typeof value === "string" && value.trim() ? value.trim() : output[seat];
+  });
+  return output;
+}
+
+function normalizePlayerReadyMap(map, mode) {
+  const output = createDefaultPlayerReadyMap(mode);
+  if (!map || typeof map !== "object") {
+    return output;
+  }
+
+  Object.keys(output).forEach((seat) => {
+    output[seat] = Boolean(map[seat]);
   });
   return output;
 }
@@ -169,6 +189,7 @@ function createDefaultRoomConfig(mode) {
     colorOwner: createDefaultColorOwner(normalizedMode),
     playerUserMap: createEmptyPlayerUserMap(normalizedMode),
     playerNicknameMap: createDefaultPlayerNicknameMap(normalizedMode),
+    playerReadyMap: createDefaultPlayerReadyMap(normalizedMode),
   };
 }
 
@@ -188,6 +209,7 @@ const state = {
   previewAnchor: null,
   preview: null,
   message: "先创建或加入一个房间吧",
+  waitingDismissed: false,
   lastScrolledTurnColor: null,
   serializedGameState: "",
   boardPointer: {
@@ -226,8 +248,10 @@ const state = {
   },
   dom: {
     lobbyView: null,
+    waitingView: null,
     gameView: null,
     lobby: {},
+    waiting: {},
     board: null,
     boardArea: null,
     piecePool: null,
@@ -353,6 +377,7 @@ function serializeRoomGameState(gameState, roomConfig) {
     colorOwner: normalizeColorOwner(safeConfig.colorOwner, safeConfig.mode),
     playerUserMap: normalizePlayerUserMap(safeConfig.playerUserMap, safeConfig.mode),
     playerNicknameMap: normalizePlayerNicknameMap(safeConfig.playerNicknameMap, safeConfig.mode),
+    playerReadyMap: normalizePlayerReadyMap(safeConfig.playerReadyMap, safeConfig.mode),
     engineState: serializeGameState(gameState),
   });
 }
@@ -398,6 +423,7 @@ function parseRoomGameState(rawGameState, room) {
       colorOwner: normalizeColorOwner(parsed.colorOwner, mode),
       playerUserMap: normalizePlayerUserMap(parsed.playerUserMap, mode),
       playerNicknameMap: normalizePlayerNicknameMap(parsed.playerNicknameMap, mode),
+      playerReadyMap: normalizePlayerReadyMap(parsed.playerReadyMap, mode),
     };
 
     try {
@@ -455,14 +481,16 @@ function getJoinedSeatCount(config) {
   return getPlayerSeatsByMode(config.mode).filter((seat) => Boolean(config.playerUserMap[seat])).length;
 }
 
-function getExpectedRoomStatusByConfig(game, config) {
+function getExpectedRoomStatusByConfig(game, config, previousStatus) {
   if (game.gameOver) {
     return "finished";
   }
 
-  const required = getPlayerSeatsByMode(config.mode).length;
-  const joined = getJoinedSeatCount(config);
-  return joined >= required ? "playing" : "waiting";
+  if (previousStatus === "playing" || previousStatus === "finished") {
+    return previousStatus;
+  }
+
+  return "waiting";
 }
 
 function canClientUseColor(color) {
@@ -489,6 +517,38 @@ function getEffectiveRoomStatus() {
 function getWaitingSeats() {
   const seats = getPlayerSeatsByMode(state.roomConfig.mode);
   return seats.filter((seat) => !state.roomConfig.playerUserMap[seat]);
+}
+
+function getJoinedSeats(config = state.roomConfig) {
+  return getPlayerSeatsByMode(config.mode).filter((seat) => Boolean(config.playerUserMap[seat]));
+}
+
+function areAllJoinedPlayersReady(config = state.roomConfig) {
+  const seats = getPlayerSeatsByMode(config.mode);
+  const joinedSeats = seats.filter((seat) => Boolean(config.playerUserMap[seat]));
+  if (joinedSeats.length !== seats.length || joinedSeats.length === 0) {
+    return false;
+  }
+  return joinedSeats.every((seat) => Boolean(config.playerReadyMap?.[seat]));
+}
+
+function getHostSeat(config = state.roomConfig, room = state.network.room) {
+  if (!room?.host_user_id) {
+    return "";
+  }
+  return getPlayerSeatsByMode(config.mode).find((seat) => config.playerUserMap?.[seat] === room.host_user_id) || "";
+}
+
+function isCurrentUserHost() {
+  return Boolean(state.network.room?.host_user_id) && state.network.room.host_user_id === state.network.userId;
+}
+
+function canHostStartGame() {
+  const room = state.network.room;
+  if (!room || room.status !== "waiting") {
+    return false;
+  }
+  return isCurrentUserHost() && areAllJoinedPlayersReady(state.roomConfig);
 }
 
 function getCannotOperateReason() {
@@ -525,7 +585,11 @@ function canCurrentClientOperate() {
 }
 
 function setView(view) {
-  state.view = view === "game" ? "game" : "lobby";
+  if (view === "game" || view === "waiting") {
+    state.view = view;
+    return;
+  }
+  state.view = "lobby";
 }
 
 function setLobbyAction(action) {
@@ -548,14 +612,11 @@ function updateLobbyStatus(message) {
 
 function renderLobby() {
   const lobbyView = state.dom.lobbyView;
-  const gameView = state.dom.gameView;
-  if (!lobbyView || !gameView) {
+  if (!lobbyView) {
     return;
   }
 
-  const inLobby = state.view === "lobby";
-  lobbyView.hidden = !inLobby;
-  gameView.hidden = inLobby;
+  lobbyView.hidden = state.view !== "lobby";
 
   const lobby = state.dom.lobby;
   if (!lobby.mode2Btn) {
@@ -584,6 +645,89 @@ function renderLobby() {
 
   if (lobby.statusText) {
     lobby.statusText.textContent = state.lobby.status;
+  }
+}
+
+function renderWaiting() {
+  const waitingView = state.dom.waitingView;
+  if (!waitingView) {
+    return;
+  }
+
+  const inWaiting = state.view === "waiting";
+  waitingView.hidden = !inWaiting;
+
+  const waiting = state.dom.waiting;
+  if (!waiting.roomCodeText) {
+    return;
+  }
+
+  const room = state.network.room;
+  const config = state.roomConfig;
+  const seats = getPlayerSeatsByMode(config.mode);
+  const joinedSeats = getJoinedSeats(config);
+  const joinedCount = joinedSeats.length;
+  const totalCount = seats.length;
+
+  waiting.roomCodeText.textContent = room?.id || "--";
+  waiting.playerCountText.textContent = `等待玩家（${joinedCount}/${totalCount}）`;
+
+  const hostSeat = getHostSeat(config, room);
+  waiting.playersList.innerHTML = "";
+  seats.forEach((seat) => {
+    const row = document.createElement("div");
+    row.className = "waiting-player-row";
+
+    const name = document.createElement("span");
+    name.className = "waiting-player-name";
+    const joined = Boolean(config.playerUserMap?.[seat]);
+    const nickname = getDisplayNameForSeat(seat);
+    if (joined) {
+      name.textContent = seat === hostSeat ? `${nickname}（房主）` : nickname;
+    } else {
+      name.textContent = `${getDefaultNicknameBySeat(seat)}（等待加入）`;
+    }
+
+    const badge = document.createElement("span");
+    badge.className = "waiting-status-badge";
+    if (!joined) {
+      badge.classList.add("status-empty");
+      badge.textContent = "待加入";
+    } else if (config.playerReadyMap?.[seat]) {
+      badge.classList.add("status-ready");
+      badge.textContent = "已准备";
+    } else {
+      badge.classList.add("status-pending");
+      badge.textContent = "未准备";
+    }
+
+    row.appendChild(name);
+    row.appendChild(badge);
+    waiting.playersList.appendChild(row);
+  });
+
+  const isPlayerSeat = /^player[1-4]$/.test(state.network.role);
+  const roomStatus = room?.status || "waiting";
+  const canToggleReady = inWaiting && isPlayerSeat && roomStatus === "waiting";
+  const selfReady = isPlayerSeat ? Boolean(config.playerReadyMap?.[state.network.role]) : false;
+  waiting.readyBtn.disabled = !canToggleReady;
+  waiting.readyBtn.textContent = selfReady ? "取消准备" : "准备";
+  waiting.readyBtn.classList.toggle("is-ready", selfReady);
+
+  const canStart = canHostStartGame();
+  waiting.startBtn.disabled = !canStart;
+  waiting.startBtn.textContent = isCurrentUserHost() ? "开始游戏" : "等待房主开始";
+
+  if (!room) {
+    waiting.hintText.textContent = "正在连接房间...";
+  } else if (roomStatus === "playing") {
+    waiting.hintText.textContent = "对局已开始，正在进入棋盘";
+  } else if (canStart) {
+    waiting.hintText.textContent = "所有玩家已准备，房主可以开始";
+  } else if (areAllJoinedPlayersReady(config)) {
+    waiting.hintText.textContent = "已全部准备，等待房主开始";
+  } else {
+    waiting.hintText.textContent = "准备好后点击“准备”，等待全员就绪";
   }
 }
 
@@ -1309,6 +1453,11 @@ function renderControls() {
 
 function render() {
   renderLobby();
+  renderWaiting();
+  if (state.dom.gameView) {
+    state.dom.gameView.hidden = state.view !== "game";
+  }
+
   if (state.view !== "game") {
     return;
   }
@@ -1944,7 +2093,14 @@ function applyRoomSnapshot(room, options = {}) {
     state.message = buildRealtimeSyncMessage(room);
   }
 
-  setView("game");
+  const roomStatus = room.status || "waiting";
+  if (roomStatus === "playing" || roomStatus === "finished") {
+    state.waitingDismissed = false;
+    setView("game");
+  } else {
+    setView(state.waitingDismissed ? "lobby" : "waiting");
+  }
+
   updateLayout();
   render();
 }
@@ -2004,18 +2160,21 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
     colorOwner: { ...parsed.config.colorOwner },
     playerUserMap: { ...parsed.config.playerUserMap },
     playerNicknameMap: { ...parsed.config.playerNicknameMap },
+    playerReadyMap: { ...parsed.config.playerReadyMap },
   };
   const seats = getPlayerSeatsByMode(config.mode);
 
   let role = getRoleByRoomConfig(config, state.network.userId);
   let changed = false;
   const nickname = String(preferredNickname || "").trim();
+  const canClaimSeat = (room.status || "waiting") === "waiting";
 
-  if (role === "spectator") {
+  if (role === "spectator" && canClaimSeat) {
     const emptySeat = seats.find((seat) => !config.playerUserMap[seat]);
     if (emptySeat) {
       config.playerUserMap[emptySeat] = state.network.userId;
       config.playerNicknameMap[emptySeat] = nickname || getDefaultNicknameBySeat(emptySeat);
+      config.playerReadyMap[emptySeat] = false;
       role = emptySeat;
       changed = true;
     }
@@ -2027,7 +2186,7 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
     }
   }
 
-  const expectedStatus = getExpectedRoomStatusByConfig(parsed.game, config);
+  const expectedStatus = getExpectedRoomStatusByConfig(parsed.game, config, room.status);
   const expectedHost = config.playerUserMap.player1 || room.host_user_id || null;
   const expectedGuest = config.playerUserMap.player2 || room.guest_user_id || null;
   const shouldUpdateRoom =
@@ -2119,7 +2278,7 @@ async function createOnlineRoom(options = {}) {
     const roomConfig = createDefaultRoomConfig(mode);
     roomConfig.playerUserMap.player1 = state.network.userId;
     roomConfig.playerNicknameMap.player1 = nickname || getDefaultNicknameBySeat("player1");
-    const initialStatus = getExpectedRoomStatusByConfig(initialGame, roomConfig);
+    const initialStatus = getExpectedRoomStatusByConfig(initialGame, roomConfig, "waiting");
     const room = await sbCreateRoom(state.network.client, {
       roomId: roomCode,
       hostUserId: state.network.userId,
@@ -2131,6 +2290,7 @@ async function createOnlineRoom(options = {}) {
 
     setRoomIdToUrl(room.id);
     subscribeCurrentRoom(room.id);
+    state.waitingDismissed = false;
     const waitingSeats = getPlayerSeatsByMode(mode).slice(1).map((seat) => getSeatLabel(seat));
     applyRoomSnapshot(room, {
       message:
@@ -2182,6 +2342,7 @@ async function joinRoomByCode(roomIdInput, nicknameInput) {
     const resolved = await claimSeatAndMaybeUpdateRoom(loaded, nickname);
     setRoomIdToUrl(resolved.room.id);
     subscribeCurrentRoom(resolved.room.id);
+    state.waitingDismissed = false;
     const modeLabel = resolved.config.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式";
     applyRoomSnapshot(resolved.room, {
       message: `已进入房间 ${resolved.room.id}（${modeLabel}，身份：${getSeatLabel(resolved.role)}）`,
@@ -2223,6 +2384,105 @@ async function copyRoomLink() {
   }
 
   render();
+}
+
+async function updateRoomWithConfig(config, options = {}) {
+  if (!state.network.client || !state.network.roomId || !state.network.room) {
+    return false;
+  }
+
+  const payload = {
+    game_state: serializeRoomGameState(state.game, config),
+    status: options.status || state.network.room.status || "waiting",
+    current_turn_color: options.currentTurnColor || state.game.currentTurnColor,
+    winner: options.winner !== undefined ? options.winner : state.game.winner,
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    const updatedRoom = await sbUpdateRoomState(
+      state.network.client,
+      state.network.roomId,
+      payload,
+      state.network.lastRoomUpdatedAt
+    );
+    applyRoomSnapshot(updatedRoom, {
+      message: options.message || state.message,
+      fromRealtime: false,
+    });
+    return true;
+  } catch (error) {
+    try {
+      await syncRoomFromServer("房间有新变化，已自动刷新到最新局面");
+    } catch (_syncError) {
+      state.message = options.errorMessage || `操作未完成：${error.message || String(error)}`;
+      render();
+    }
+    return false;
+  }
+}
+
+function handleWaitingBack() {
+  state.waitingDismissed = true;
+  setView("lobby");
+  updateLobbyStatus(state.network.roomId ? `你仍在房间 ${state.network.roomId} 中` : state.lobby.status);
+  render();
+}
+
+async function toggleReadyInWaitingRoom() {
+  if (!state.network.room || state.network.room.status !== "waiting") {
+    state.message = "当前不在准备阶段";
+    render();
+    return;
+  }
+
+  if (!/^player[1-4]$/.test(state.network.role)) {
+    state.message = "观战模式下无法设置准备状态";
+    render();
+    return;
+  }
+
+  const role = state.network.role;
+  const nextConfig = {
+    ...state.roomConfig,
+    playerUserMap: { ...state.roomConfig.playerUserMap },
+    playerNicknameMap: { ...state.roomConfig.playerNicknameMap },
+    playerReadyMap: { ...state.roomConfig.playerReadyMap },
+  };
+  const nextReady = !Boolean(nextConfig.playerReadyMap[role]);
+  nextConfig.playerReadyMap[role] = nextReady;
+
+  await updateRoomWithConfig(nextConfig, {
+    status: "waiting",
+    message: nextReady ? "你已准备，等待其他玩家" : "已取消准备",
+    errorMessage: "准备状态更新失败，请稍后再试",
+  });
+}
+
+async function startGameFromWaitingRoom() {
+  if (!state.network.room || state.network.room.status !== "waiting") {
+    state.message = "当前不在准备阶段";
+    render();
+    return;
+  }
+
+  if (!isCurrentUserHost()) {
+    state.message = "只有房主可以开始游戏";
+    render();
+    return;
+  }
+
+  if (!canHostStartGame()) {
+    state.message = "需要全员入座并全部准备后才能开始";
+    render();
+    return;
+  }
+
+  await updateRoomWithConfig(state.roomConfig, {
+    status: "playing",
+    message: "游戏开始，正在进入棋盘",
+    errorMessage: "开始游戏失败，请重试",
+  });
 }
 
 function handleLobbyModeChange(mode) {
@@ -2291,6 +2551,10 @@ function bindEvents() {
   });
   state.dom.buttons.copyRoomLink.addEventListener("click", copyRoomLink);
 
+  state.dom.waiting.backBtn?.addEventListener("click", handleWaitingBack);
+  state.dom.waiting.readyBtn?.addEventListener("click", toggleReadyInWaitingRoom);
+  state.dom.waiting.startBtn?.addEventListener("click", startGameFromWaitingRoom);
+
   if (state.dom.lobby.nicknameInput) {
     state.dom.lobby.nicknameInput.addEventListener("input", handleLobbyNicknameInput);
   }
@@ -2319,6 +2583,7 @@ function bindEvents() {
 
 function cacheDom() {
   state.dom.lobbyView = document.getElementById("lobbyView");
+  state.dom.waitingView = document.getElementById("waitingView");
   state.dom.gameView = document.getElementById("gameView");
   state.dom.board = document.getElementById("board");
   state.dom.boardArea = document.querySelector(".board-area");
@@ -2341,6 +2606,16 @@ function cacheDom() {
     createConfirmBtn: document.getElementById("lobbyCreateConfirmBtn"),
     joinConfirmBtn: document.getElementById("lobbyJoinConfirmBtn"),
     statusText: document.getElementById("lobbyStatusText"),
+  };
+
+  state.dom.waiting = {
+    backBtn: document.getElementById("waitingBackBtn"),
+    roomCodeText: document.getElementById("waitingRoomCodeText"),
+    playerCountText: document.getElementById("waitingPlayerCountText"),
+    playersList: document.getElementById("waitingPlayersList"),
+    readyBtn: document.getElementById("waitingReadyBtn"),
+    startBtn: document.getElementById("waitingStartBtn"),
+    hintText: document.getElementById("waitingHintText"),
   };
 
   state.dom.buttons = {

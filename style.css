@@ -493,6 +493,193 @@ body {
   padding-bottom: 1px;
 }
 
+.waiting-view {
+  width: 100vw;
+  height: 100dvh;
+  overflow-y: auto;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+
+.waiting-shell {
+  max-width: 760px;
+  min-height: calc(100dvh - 24px);
+  margin: 0 auto;
+  background: rgba(246, 247, 252, 0.92);
+  border-radius: 28px;
+  border: 1px solid rgba(196, 207, 229, 0.5);
+  box-shadow: 0 14px 28px rgba(94, 106, 132, 0.18);
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: lobby-enter 240ms ease-out both;
+}
+
+.waiting-topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+}
+
+.waiting-topbar h2 {
+  margin: 0;
+  text-align: center;
+  color: #243855;
+  font-size: clamp(26px, 5.2vw, 40px);
+}
+
+.waiting-back-btn {
+  border: 0;
+  min-height: 44px;
+  border-radius: 14px;
+  padding: 0 16px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #4a5e79;
+  background: linear-gradient(180deg, #f4f6fa, #e3e8f1);
+  box-shadow: 0 4px 10px rgba(111, 126, 156, 0.18);
+  transition: transform 120ms ease, filter 160ms ease, box-shadow 160ms ease;
+}
+
+.waiting-back-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.waiting-topbar-spacer {
+  width: 68px;
+}
+
+.waiting-room-code-card {
+  border-radius: 24px;
+  padding: 18px 14px;
+  text-align: center;
+  background: linear-gradient(120deg, rgba(242, 194, 223, 0.6), rgba(188, 214, 247, 0.6));
+  border: 1px solid rgba(188, 204, 229, 0.58);
+  box-shadow: 0 8px 18px rgba(124, 140, 170, 0.17);
+}
+
+.waiting-room-code-card p {
+  margin: 0;
+  color: #556883;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.waiting-room-code-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #1e304a;
+  font-size: clamp(44px, 12vw, 72px);
+  line-height: 1;
+}
+
+.waiting-players-card {
+  border-radius: 22px;
+  border: 1px solid rgba(188, 204, 228, 0.55);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 12px;
+  box-shadow: 0 8px 16px rgba(103, 118, 150, 0.12);
+}
+
+.waiting-players-card h3 {
+  margin: 0 0 10px;
+  color: #263a57;
+  font-size: clamp(24px, 4.8vw, 34px);
+}
+
+.waiting-players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.waiting-player-row {
+  border-radius: 16px;
+  border: 1px solid rgba(195, 207, 228, 0.65);
+  background: rgba(255, 255, 255, 0.86);
+  min-height: 62px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: transform 120ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.waiting-player-name {
+  font-size: clamp(22px, 4.5vw, 30px);
+  font-weight: 800;
+  color: #2d4362;
+}
+
+.waiting-status-badge {
+  border-radius: 999px;
+  padding: 7px 15px;
+  font-size: clamp(20px, 4.2vw, 28px);
+  font-weight: 900;
+}
+
+.waiting-status-badge.status-ready {
+  color: #1f8550;
+  background: rgba(156, 229, 187, 0.48);
+}
+
+.waiting-status-badge.status-pending {
+  color: #a06a00;
+  background: rgba(246, 230, 162, 0.66);
+}
+
+.waiting-status-badge.status-empty {
+  color: #6f7f99;
+  background: rgba(220, 228, 242, 0.66);
+}
+
+.waiting-hint {
+  margin: 0;
+  text-align: center;
+  color: #6b7d99;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.waiting-actions {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.waiting-action-btn {
+  border: 0;
+  min-height: 58px;
+  border-radius: 20px;
+  color: #fff;
+  font-size: clamp(28px, 5.6vw, 38px);
+  font-weight: 900;
+  box-shadow: 0 8px 16px rgba(115, 126, 156, 0.24);
+  transition: transform 120ms ease, box-shadow 180ms ease, filter 180ms ease, opacity 180ms ease;
+}
+
+.waiting-action-btn.ready {
+  background: linear-gradient(180deg, #f07cc2, #e85bad);
+}
+
+.waiting-action-btn.ready.is-ready {
+  background: linear-gradient(180deg, #7ac99e, #4eab7f);
+}
+
+.waiting-action-btn.start {
+  background: linear-gradient(180deg, #86b6ef, #5e9de9);
+}
+
+.waiting-action-btn:disabled {
+  opacity: 0.52;
+  box-shadow: none;
+}
+
+.waiting-action-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
 @media (max-height: 760px) {
   .lobby-hero {
     min-height: clamp(170px, 28dvh, 220px);

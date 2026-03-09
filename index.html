@@ -14,7 +14,7 @@
     <meta property="og:site_name" content="来来回回Blokus" />
     <meta property="og:type" content="website" />
     <meta property="og:description" content="来来回回Blokus - 在线联机方块棋" />
-    <link rel="stylesheet" href="style.css?v=20260309m" />
+    <link rel="stylesheet" href="style.css?v=20260309n" />
   </head>
   <body>
     <section id="lobbyView" class="lobby-view">
@@ -87,6 +87,35 @@
         </div>
 
         <p class="lobby-foot">进入游戏后请横屏手机体验</p>
+      </div>
+    </section>
+
+    <section id="waitingView" class="waiting-view" hidden>
+      <div class="waiting-shell">
+        <header class="waiting-topbar">
+          <button id="waitingBackBtn" class="waiting-back-btn" type="button">返回</button>
+          <h2>房间等待</h2>
+          <span class="waiting-topbar-spacer" aria-hidden="true"></span>
+        </header>
+
+        <section class="waiting-room-code-card">
+          <p>房间码</p>
+          <strong id="waitingRoomCodeText">--</strong>
+        </section>
+
+        <section class="waiting-players-card">
+          <h3 id="waitingPlayerCountText">等待玩家（0/0）</h3>
+          <div id="waitingPlayersList" class="waiting-players-list"></div>
+        </section>
+
+        <p id="waitingHintText" class="waiting-hint">准备好后点击“准备”，等待全员就绪</p>
+
+        <div class="waiting-actions">
+          <button id="waitingReadyBtn" class="waiting-action-btn ready" type="button">准备</button>
+          <button id="waitingStartBtn" class="waiting-action-btn start" type="button" disabled>
+            开始游戏
+          </button>
+        </div>
       </div>
     </section>
 
@@ -203,8 +232,8 @@
       </div>
     </section>
 
-    <script src="engine.js?v=20260309m"></script>
-    <script src="supabase.js?v=20260309m"></script>
-    <script src="app.js?v=20260309m"></script>
+    <script src="engine.js?v=20260309n"></script>
+    <script src="supabase.js?v=20260309n"></script>
+    <script src="app.js?v=20260309n"></script>
   </body>
 </html>
