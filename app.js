@@ -668,6 +668,68 @@ function isInBounds(row, col) {
   return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function getTransformedPointsByPiece(piece) {
+  if (!piece) {
+    return [];
+  }
+
+  return getTransformedShape(piece.shape, state.selectedRotation, state.selectedFlipped);
+}
+
+function getShapeBounds(points) {
+  if (!points.length) {
+    return {
+      minX: 0,
+      maxX: 0,
+      minY: 0,
+      maxY: 0,
+    };
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  points.forEach(([x, y]) => {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  });
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+  };
+}
+
+function getClampedAnchorForSelectedPiece(rawRow, rawCol) {
+  const piece = getPieceById(state.selectedPieceId);
+  if (!piece) {
+    return { row: rawRow, col: rawCol };
+  }
+
+  const points = getTransformedPointsByPiece(piece);
+  const bounds = getShapeBounds(points);
+
+  const minAllowedCol = -bounds.minX;
+  const maxAllowedCol = BOARD_SIZE - 1 - bounds.maxX;
+  const minAllowedRow = -bounds.minY;
+  const maxAllowedRow = BOARD_SIZE - 1 - bounds.maxY;
+
+  return {
+    row: clamp(rawRow, minAllowedRow, maxAllowedRow),
+    col: clamp(rawCol, minAllowedCol, maxAllowedCol),
+  };
+}
+
 function buildMove(anchorRow, anchorCol) {
   if (!state.selectedPieceId) {
     return null;
@@ -970,7 +1032,9 @@ function refreshPreviewForCurrentAnchor(successMessage) {
     return;
   }
 
-  const move = buildMove(state.previewAnchor.row, state.previewAnchor.col);
+  const clamped = getClampedAnchorForSelectedPiece(state.previewAnchor.row, state.previewAnchor.col);
+  state.previewAnchor = { row: clamped.row, col: clamped.col };
+  const move = buildMove(clamped.row, clamped.col);
   state.preview = buildPreview(move);
   state.message = state.preview?.valid ? "预览合法，可放置" : `非法预览：${state.preview?.reason || "未知原因"}`;
   render();
@@ -1026,8 +1090,9 @@ function updatePreviewAt(row, col) {
     return;
   }
 
-  const move = buildMove(row, col);
-  state.previewAnchor = { row, col };
+  const clamped = getClampedAnchorForSelectedPiece(row, col);
+  const move = buildMove(clamped.row, clamped.col);
+  state.previewAnchor = { row: clamped.row, col: clamped.col };
   state.preview = buildPreview(move);
   state.message = state.preview?.valid ? "预览合法，可放置" : `非法预览：${state.preview?.reason || "未知原因"}`;
   render();
