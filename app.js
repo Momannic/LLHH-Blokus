@@ -646,6 +646,11 @@ function renderLobby() {
   if (lobby.statusText) {
     lobby.statusText.textContent = state.lobby.status;
   }
+
+  if (lobby.returnRoomBtn) {
+    const canReturnRoom = Boolean(state.network.roomId) && Boolean(state.network.room);
+    lobby.returnRoomBtn.hidden = !canReturnRoom;
+  }
 }
 
 function renderWaiting() {
@@ -2429,6 +2434,39 @@ function handleWaitingBack() {
   render();
 }
 
+async function handleLobbyReturnRoom() {
+  if (!state.network.roomId) {
+    return;
+  }
+
+  if (!state.network.room && state.network.client) {
+    try {
+      const latest = await sbLoadRoom(state.network.client, state.network.roomId);
+      if (latest) {
+        applyRoomSnapshot(latest, {
+          message: `已返回房间 ${state.network.roomId}`,
+          fromRealtime: false,
+        });
+        return;
+      }
+    } catch (_error) {
+      // Ignore load failure and fallback to local state.
+    }
+  }
+
+  if (!state.network.room) {
+    state.message = "当前房间不可用，请重新加入";
+    render();
+    return;
+  }
+
+  state.waitingDismissed = false;
+  const roomStatus = state.network.room.status || "waiting";
+  setView(roomStatus === "waiting" ? "waiting" : "game");
+  updateLayout();
+  render();
+}
+
 async function toggleReadyInWaitingRoom() {
   if (!state.network.room || state.network.room.status !== "waiting") {
     state.message = "当前不在准备阶段";
@@ -2554,6 +2592,7 @@ function bindEvents() {
   state.dom.waiting.backBtn?.addEventListener("click", handleWaitingBack);
   state.dom.waiting.readyBtn?.addEventListener("click", toggleReadyInWaitingRoom);
   state.dom.waiting.startBtn?.addEventListener("click", startGameFromWaitingRoom);
+  state.dom.lobby.returnRoomBtn?.addEventListener("click", handleLobbyReturnRoom);
 
   if (state.dom.lobby.nicknameInput) {
     state.dom.lobby.nicknameInput.addEventListener("input", handleLobbyNicknameInput);
@@ -2606,6 +2645,7 @@ function cacheDom() {
     createConfirmBtn: document.getElementById("lobbyCreateConfirmBtn"),
     joinConfirmBtn: document.getElementById("lobbyJoinConfirmBtn"),
     statusText: document.getElementById("lobbyStatusText"),
+    returnRoomBtn: document.getElementById("lobbyReturnRoomBtn"),
   };
 
   state.dom.waiting = {
