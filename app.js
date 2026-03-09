@@ -58,9 +58,9 @@ const COLOR_OWNER_BY_MODE = {
 };
 
 const ROOM_STATUS_LABEL = {
-  waiting: "等待中",
-  playing: "对局中",
-  finished: "已结束",
+  waiting: "等待开局",
+  playing: "对局进行中",
+  finished: "对局结束",
 };
 
 const CORNER_BY_COLOR = {
@@ -187,7 +187,7 @@ const state = {
   selectedFlipped: false,
   previewAnchor: null,
   preview: null,
-  message: "请创建房间，或通过房间链接加入",
+  message: "先创建或加入一个房间吧",
   lastScrolledTurnColor: null,
   serializedGameState: "",
   boardPointer: {
@@ -264,6 +264,13 @@ function getPlayerByColor(color) {
 function getPlayerNameByColor(color) {
   const seat = state.roomConfig.colorOwner[color];
   return state.roomConfig.playerNicknameMap?.[seat] || `玩家${getPlayerByColor(color)}`;
+}
+
+function getDisplayNameForSeat(seat) {
+  if (!seat || !/^player[1-4]$/.test(seat)) {
+    return "";
+  }
+  return state.roomConfig.playerNicknameMap?.[seat] || getDefaultNicknameBySeat(seat);
 }
 
 function getPieceById(pieceId) {
@@ -486,28 +493,28 @@ function getWaitingSeats() {
 
 function getCannotOperateReason() {
   if (!state.network.ready) {
-    return "联机服务未就绪";
+    return "正在连接联机服务，请稍等";
   }
 
   if (!state.network.roomId || !state.network.room) {
-    return "请先创建房间或通过链接加入房间";
+    return "先创建或加入一个房间吧";
   }
 
   if (state.network.role === "spectator") {
-    return "观战模式不可操作";
+    return "你正在观战，暂时不能落子";
   }
 
   const roomStatus = getEffectiveRoomStatus();
   if (roomStatus === "waiting") {
-    return "等待玩家加入";
+    return "等待其他玩家就位";
   }
 
   if (roomStatus === "finished" || state.game.gameOver) {
-    return "游戏已结束";
+    return "这局已经结束了";
   }
 
   if (!canClientUseColor(getCurrentTurnColor())) {
-    return `当前轮到${COLOR_LABEL[getCurrentTurnColor()]}色，请等待对手`;
+    return `现在是${COLOR_LABEL[getCurrentTurnColor()]}色回合，先等对手行动`;
   }
 
   return "";
@@ -832,7 +839,7 @@ function renderPiecePool() {
   });
 
   if (state.dom.ui.piecePoolHint) {
-    state.dom.ui.piecePoolHint.textContent = `当前为${COLOR_LABEL[currentTurnColor]}色回合`;
+    state.dom.ui.piecePoolHint.textContent = `现在是${COLOR_LABEL[currentTurnColor]}色回合`;
   }
 
   state.game.pieces.forEach((piece) => {
@@ -1154,15 +1161,18 @@ function getResultText(scores) {
     return "对局进行中";
   }
 
+  const player1Name = getDisplayNameForSeat("player1") || "玩家1";
+  const player2Name = getDisplayNameForSeat("player2") || "玩家2";
+
   if (scores.winner === "player1") {
-    return `游戏结束：玩家1获胜（${scores.player1Placed} : ${scores.player2Placed}）`;
+    return `对局结束，${player1Name}获胜（${scores.player1Placed} : ${scores.player2Placed}）`;
   }
 
   if (scores.winner === "player2") {
-    return `游戏结束：玩家2获胜（${scores.player2Placed} : ${scores.player1Placed}）`;
+    return `对局结束，${player2Name}获胜（${scores.player2Placed} : ${scores.player1Placed}）`;
   }
 
-  return `游戏结束：平局（${scores.player1Placed} : ${scores.player2Placed}）`;
+  return `对局结束，平局（${scores.player1Placed} : ${scores.player2Placed}）`;
 }
 
 function updateRoomCardUI() {
@@ -1173,15 +1183,15 @@ function updateRoomCardUI() {
   const canAct = canCurrentClientOperate();
 
   if (!roomId || !room) {
-    state.dom.ui.roomCode.textContent = "房间号：未加入";
-    state.dom.ui.roomRole.textContent = `我的身份：${getSeatLabel("none")}`;
-    state.dom.ui.roomStatus.textContent = "房间状态：未连接";
-    state.dom.ui.roomCanAct.textContent = "当前是否轮到我：否";
+    state.dom.ui.roomCode.textContent = "还没进入房间";
+    state.dom.ui.roomRole.textContent = "先在大厅创建或加入一局";
+    state.dom.ui.roomStatus.textContent = "等待开局";
+    state.dom.ui.roomCanAct.textContent = "进入房间后会显示行动提示";
 
     if (!state.network.ready) {
-      state.dom.ui.roomHint.textContent = "联机服务未就绪，可点击“创建房间”重试";
+      state.dom.ui.roomHint.textContent = "联机服务连接中，稍后会自动恢复";
     } else {
-      state.dom.ui.roomHint.textContent = "请先在大厅中创建或加入房间";
+      state.dom.ui.roomHint.textContent = "先进入房间，稍后可复制房间链接";
     }
 
     state.dom.buttons.createRoom.disabled = state.network.creatingRoom;
@@ -1189,31 +1199,35 @@ function updateRoomCardUI() {
     return;
   }
 
-  state.dom.ui.roomCode.textContent = `房间号：${room.id}`;
-  const roleName = /^player[1-4]$/.test(role)
-    ? `${getSeatLabel(role)}（${state.roomConfig.playerNicknameMap?.[role] || getDefaultNicknameBySeat(role)}）`
-    : getSeatLabel(role);
-  state.dom.ui.roomRole.textContent = `我的身份：${roleName}`;
-  state.dom.ui.roomStatus.textContent = `房间状态：${ROOM_STATUS_LABEL[roomStatus] || roomStatus}（${
+  state.dom.ui.roomCode.textContent = `房间 ${room.id}`;
+  const roleName = /^player[1-4]$/.test(role) ? getDisplayNameForSeat(role) : getSeatLabel(role);
+  state.dom.ui.roomRole.textContent = /^player[1-4]$/.test(role)
+    ? `你是 ${roleName}`
+    : "你正在观战";
+  state.dom.ui.roomStatus.textContent = `${ROOM_STATUS_LABEL[roomStatus] || roomStatus} · ${
     state.roomConfig.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式"
-  }）`;
-  state.dom.ui.roomCanAct.textContent = `当前是否轮到我：${canAct ? "是" : "否"}`;
+  }`;
+  state.dom.ui.roomCanAct.textContent = canAct
+    ? `轮到你行动（${COLOR_LABEL[getCurrentTurnColor()]}色）`
+    : `当前是${COLOR_LABEL[getCurrentTurnColor()]}色回合`;
 
   if (roomStatus === "waiting") {
     const waitingSeats = getWaitingSeats();
     if (waitingSeats.length > 0) {
-      state.dom.ui.roomHint.textContent = `等待${waitingSeats.map((seat) => getSeatLabel(seat)).join("、")}加入`;
+      state.dom.ui.roomHint.textContent = `等待${waitingSeats
+        .map((seat) => getDisplayNameForSeat(seat) || getSeatLabel(seat))
+        .join("、")}入座`;
     } else {
-      state.dom.ui.roomHint.textContent = "玩家已就绪，等待房间开始";
+      state.dom.ui.roomHint.textContent = "玩家已就位，马上开始";
     }
   } else if (roomStatus === "playing") {
     if (canAct) {
-      state.dom.ui.roomHint.textContent = `轮到你操作（${COLOR_LABEL[getCurrentTurnColor()]}色）`;
+      state.dom.ui.roomHint.textContent = "可以落子了，选个拼块试试";
     } else {
-      state.dom.ui.roomHint.textContent = `等待${COLOR_LABEL[getCurrentTurnColor()]}色玩家操作`;
+      state.dom.ui.roomHint.textContent = `等待${getPlayerNameByColor(getCurrentTurnColor())}落子`;
     }
   } else {
-    state.dom.ui.roomHint.textContent = "对局已结束，可复制链接查看结果";
+    state.dom.ui.roomHint.textContent = "这局已经结束，可复制链接回看结果";
   }
 
   state.dom.buttons.createRoom.disabled = true;
@@ -1224,24 +1238,29 @@ function updateTurnUI() {
   const turnColor = getCurrentTurnColor();
   const turnPlayerName = getPlayerNameByColor(turnColor);
   const scores = state.game.scores || calculateScores(state.game);
+  const player1Name = getDisplayNameForSeat("player1") || "玩家1";
+  const player2Name = getDisplayNameForSeat("player2") || "玩家2";
 
-  state.dom.ui.turnPlayer.textContent = `${turnPlayerName}（${COLOR_LABEL[turnColor]}色）`;
+  state.dom.ui.turnPlayer.textContent = `轮到 ${turnPlayerName}`;
   state.dom.ui.turnNumber.textContent = `第 ${state.game.turnCount} 手`;
-  state.dom.ui.turnColors.textContent = `当前颜色：${COLOR_LABEL[turnColor]}`;
+  state.dom.ui.turnColors.textContent = `现在是${COLOR_LABEL[turnColor]}色回合`;
 
   if (state.selectedPieceId) {
     const selectedPiece = getPieceById(state.selectedPieceId);
     if (selectedPiece) {
-      state.dom.ui.selectedPiece.textContent = `拼块：${selectedPiece.shape}`;
-      state.dom.ui.selectedColor.textContent = `颜色：${COLOR_LABEL[selectedPiece.color]}`;
-      state.dom.ui.selectedRotation.textContent = `旋转：${state.selectedRotation}°`;
-      state.dom.ui.selectedFlip.textContent = `翻转：${state.selectedFlipped ? "是" : "否"}`;
+      state.dom.ui.selectedPiece.textContent = `已拿起${COLOR_LABEL[selectedPiece.color]}色拼块`;
+      state.dom.ui.selectedColor.textContent = "滑动棋盘可预览落点";
+      state.dom.ui.selectedRotation.textContent =
+        state.selectedRotation === 0 ? "朝向：默认" : `已旋转 ${state.selectedRotation}°`;
+      state.dom.ui.selectedFlip.textContent = state.selectedFlipped
+        ? "镜像：已翻转"
+        : "镜像：未翻转";
     }
   } else {
-    state.dom.ui.selectedPiece.textContent = "拼块：无";
-    state.dom.ui.selectedColor.textContent = "颜色：无";
-    state.dom.ui.selectedRotation.textContent = "旋转：0°";
-    state.dom.ui.selectedFlip.textContent = "翻转：否";
+    state.dom.ui.selectedPiece.textContent = "还没选拼块";
+    state.dom.ui.selectedColor.textContent = "从左侧挑一个可用拼块";
+    state.dom.ui.selectedRotation.textContent = "朝向：默认";
+    state.dom.ui.selectedFlip.textContent = "镜像：未翻转";
   }
 
   state.dom.ui.statusText.textContent = state.message;
@@ -1265,10 +1284,10 @@ function updateTurnUI() {
     }
   });
 
-  state.dom.ui.player1Placed.textContent = `玩家1得分：${scores.player1Placed}`;
-  state.dom.ui.player1Remain.textContent = `玩家1剩余格：${scores.player1Remain}`;
-  state.dom.ui.player2Placed.textContent = `玩家2得分：${scores.player2Placed}`;
-  state.dom.ui.player2Remain.textContent = `玩家2剩余格：${scores.player2Remain}`;
+  state.dom.ui.player1Placed.textContent = `${player1Name}：${scores.player1Placed} 分`;
+  state.dom.ui.player1Remain.textContent = `剩余格：${scores.player1Remain}`;
+  state.dom.ui.player2Placed.textContent = `${player2Name}：${scores.player2Placed} 分`;
+  state.dom.ui.player2Remain.textContent = `剩余格：${scores.player2Remain}`;
 
   state.dom.ui.resultText.textContent = getResultText(scores);
   state.dom.ui.resultCard.classList.toggle("is-finished", state.game.gameOver);
@@ -1304,7 +1323,7 @@ function render() {
 
 function selectPiece(pieceId) {
   if (state.game.gameOver) {
-    state.message = "游戏已结束";
+    state.message = "这局已经结束了";
     render();
     return;
   }
@@ -1322,13 +1341,13 @@ function selectPiece(pieceId) {
   }
 
   if (piece.used) {
-    state.message = "该拼块已使用";
+    state.message = "这个拼块已经用过了";
     render();
     return;
   }
 
   if (!canUseColorThisTurn(piece.color)) {
-    state.message = `当前回合只能操作${COLOR_LABEL[getCurrentTurnColor()]}色拼块`;
+    state.message = `现在是${COLOR_LABEL[getCurrentTurnColor()]}色回合`;
     render();
     return;
   }
@@ -1340,7 +1359,7 @@ function selectPiece(pieceId) {
   }
 
   if (state.selectedPieceId === piece.pieceId) {
-    state.message = `已持有 ${COLOR_LABEL[piece.color]}-${piece.shape}`;
+    state.message = `已选中${COLOR_LABEL[piece.color]}色拼块`;
     render();
     return;
   }
@@ -1350,7 +1369,7 @@ function selectPiece(pieceId) {
   state.selectedFlipped = false;
   state.previewAnchor = null;
   state.preview = null;
-  state.message = `已选择 ${COLOR_LABEL[piece.color]}-${piece.shape}，请在棋盘上滑动设置预览`;
+  state.message = `已选中${COLOR_LABEL[piece.color]}色拼块，滑动棋盘选择落点`;
   render();
 }
 
@@ -1365,7 +1384,9 @@ function refreshPreviewForCurrentAnchor(successMessage) {
   state.previewAnchor = { row: clamped.row, col: clamped.col };
   const move = buildMove(clamped.row, clamped.col);
   state.preview = buildPreview(move);
-  state.message = state.preview?.valid ? "预览合法，可放置" : `非法预览：${state.preview?.reason || "未知原因"}`;
+  state.message = state.preview?.valid
+    ? "这里可以放置"
+    : `这里放不下：${state.preview?.reason || "换个位置试试"}`;
   render();
 }
 
@@ -1378,7 +1399,7 @@ function rotateSelectedPiece() {
   }
 
   if (!state.selectedPieceId) {
-    state.message = "请先选择拼块";
+    state.message = "先从左侧选一个拼块";
     render();
     return;
   }
@@ -1396,18 +1417,18 @@ function flipSelectedPiece() {
   }
 
   if (!state.selectedPieceId) {
-    state.message = "请先选择拼块";
+    state.message = "先从左侧选一个拼块";
     render();
     return;
   }
 
   state.selectedFlipped = !state.selectedFlipped;
-  refreshPreviewForCurrentAnchor(`已${state.selectedFlipped ? "启用" : "取消"}水平翻转`);
+  refreshPreviewForCurrentAnchor(state.selectedFlipped ? "已翻转拼块" : "已恢复原镜像");
 }
 
 function updatePreviewAt(row, col) {
   if (!state.selectedPieceId) {
-    state.message = "请先选择拼块";
+    state.message = "先从左侧选一个拼块";
     render();
     return;
   }
@@ -1423,7 +1444,9 @@ function updatePreviewAt(row, col) {
   const move = buildMove(clamped.row, clamped.col);
   state.previewAnchor = { row: clamped.row, col: clamped.col };
   state.preview = buildPreview(move);
-  state.message = state.preview?.valid ? "预览合法，可放置" : `非法预览：${state.preview?.reason || "未知原因"}`;
+  state.message = state.preview?.valid
+    ? "这里可以放置"
+    : `这里放不下：${state.preview?.reason || "换个位置试试"}`;
   render();
 }
 
@@ -1479,7 +1502,7 @@ function startBoardPointerTracking(event) {
   }
 
   if (!state.selectedPieceId) {
-    state.message = "请先选择拼块";
+    state.message = "先从左侧选一个拼块";
     render();
     return;
   }
@@ -1534,13 +1557,13 @@ function buildPlaceSuccessMessage(result, move) {
 
   let text = `${getPlayerNameByColor(placedColor)}放置${COLOR_LABEL[placedColor]}色拼块成功`;
   if (skipped.length) {
-    text += `，${skipped.map((color) => `${COLOR_LABEL[color]}色`).join("、")}无合法步已自动跳过`;
+    text += `，${skipped.map((color) => `${COLOR_LABEL[color]}色`).join("、")}暂时无路可走，已自动跳过`;
   }
 
   if (result.state.gameOver) {
-    text += "。四种颜色均无合法落子，游戏结束";
+    text += "。四种颜色都无法继续落子，对局结束";
   } else {
-    text += `，轮到${COLOR_LABEL[result.state.currentTurnColor]}色（${getPlayerNameByColor(result.state.currentTurnColor)}）`;
+    text += `，接下来是${getPlayerNameByColor(result.state.currentTurnColor)}的${COLOR_LABEL[result.state.currentTurnColor]}色回合`;
   }
 
   return text;
@@ -1557,7 +1580,7 @@ async function syncRoomFromServer(message) {
   }
 
   applyRoomSnapshot(latest, {
-    message: message || "已从服务器同步最新状态",
+    message: message || "已同步到最新对局状态",
     fromRealtime: false,
   });
 }
@@ -1575,26 +1598,26 @@ async function placePiece() {
   }
 
   if (!state.selectedPieceId) {
-    state.message = "请先选择拼块";
+    state.message = "先从左侧选一个拼块";
     render();
     return;
   }
 
   if (!state.preview) {
-    state.message = "请先在棋盘上滑动设置预览位置";
+    state.message = "先在棋盘上滑动预览落点";
     render();
     return;
   }
 
   if (!state.preview.valid) {
-    state.message = `放置失败：${state.preview.reason}`;
+    state.message = `这里放不下：${state.preview.reason}`;
     render();
     return;
   }
 
   const localResult = applyMove(state.game, state.preview.move);
   if (!localResult.ok) {
-    state.message = `放置失败：${localResult.reason}`;
+    state.message = `这一步暂时行不通：${localResult.reason}`;
     render();
     return;
   }
@@ -1644,9 +1667,9 @@ async function placePiece() {
     }
   } catch (error) {
     try {
-      await syncRoomFromServer("房间已有新变更，已自动同步最新状态");
+      await syncRoomFromServer("房间有新变化，已自动刷新到最新局面");
     } catch (_syncError) {
-      state.message = `放置失败：${error.message || String(error)}`;
+      state.message = `落子未完成：${error.message || String(error)}`;
       render();
     }
   } finally {
@@ -1849,18 +1872,18 @@ function updateLayout() {
 function buildRealtimeSyncMessage(room) {
   const status = room.status || "waiting";
   if (status === "finished" || state.game.gameOver) {
-    return "房间状态已同步：对局已结束";
+    return "已同步：对局结束";
   }
 
   if (status === "waiting") {
-    return "房间状态已同步：等待玩家加入";
+    return "已同步：等待玩家就位";
   }
 
   if (canCurrentClientOperate()) {
-    return `房间状态已同步：轮到你操作（${COLOR_LABEL[getCurrentTurnColor()]}色）`;
+    return `已同步：轮到你行动（${COLOR_LABEL[getCurrentTurnColor()]}色）`;
   }
 
-  return `房间状态已同步：等待${COLOR_LABEL[getCurrentTurnColor()]}色玩家`;
+  return `已同步：等待${COLOR_LABEL[getCurrentTurnColor()]}色玩家`;
 }
 
 function applyRoomSnapshot(room, options = {}) {

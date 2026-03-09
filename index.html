@@ -14,7 +14,7 @@
     <meta property="og:site_name" content="来来回回Blokus" />
     <meta property="og:type" content="website" />
     <meta property="og:description" content="来来回回Blokus - 在线联机方块棋" />
-    <link rel="stylesheet" href="style.css?v=20260309j" />
+    <link rel="stylesheet" href="style.css?v=20260309l" />
   </head>
   <body>
     <section id="lobbyView" class="lobby-view">
@@ -102,8 +102,8 @@
         <section class="main-shell">
           <aside class="panel left-panel">
             <header class="panel-header">
-              <h2>拼块池</h2>
-              <p id="piecePoolHint">当前回合拼块</p>
+              <h2>可用拼块</h2>
+              <p id="piecePoolHint">挑一个拼块开始落子</p>
             </header>
 
             <div class="piece-pool" id="piecePool"></div>
@@ -120,17 +120,17 @@
 
           <aside class="panel right-panel">
             <header class="panel-header">
-              <h2>信息面板</h2>
-              <p>占位数据</p>
+              <h2>对局信息</h2>
+              <p>实时动态</p>
             </header>
 
             <section class="info-card room-card" id="roomCard">
-              <h3>在线房间</h3>
-              <p id="roomCode">房间号：未加入</p>
-              <p id="roomRole">我的身份：未加入</p>
-              <p id="roomStatus">房间状态：未连接</p>
-              <p id="roomCanAct">当前是否轮到我：否</p>
-              <p id="roomHint">请在大厅中创建/加入房间</p>
+              <h3>房间</h3>
+              <p id="roomCode">还没进入房间</p>
+              <p id="roomRole">先创建或加入一局</p>
+              <p id="roomStatus">等待开局</p>
+              <p id="roomCanAct">加入后会显示行动提示</p>
+              <p id="roomHint">点击下方复制按钮可分享房间链接</p>
               <div class="room-actions room-actions-only-copy">
                 <button id="btnCreateRoom" type="button">创建房间</button>
                 <button id="btnCopyRoomLink" type="button">复制房间链接</button>
@@ -138,62 +138,58 @@
             </section>
 
             <section class="info-card" id="turnCard">
-              <h3>当前回合</h3>
-              <p id="turnPlayer">玩家1</p>
+              <h3>回合</h3>
+              <p id="turnPlayer">蓝色先手</p>
               <p id="turnNumber">第 1 手</p>
-              <p id="turnColors">当前颜色：蓝</p>
+              <p id="turnColors">现在是蓝色回合</p>
             </section>
 
             <section class="info-card" id="selectedCard">
-              <h3>当前选择</h3>
-              <p id="selectedPiece">拼块：无</p>
-              <p id="selectedColor">颜色：无</p>
-              <p id="selectedRotation">旋转：0°</p>
-              <p id="selectedFlip">翻转：否</p>
+              <h3>手中拼块</h3>
+              <p id="selectedPiece">还没选拼块</p>
+              <p id="selectedColor">从左侧选择本回合可用拼块</p>
+              <p id="selectedRotation">朝向：默认</p>
+              <p id="selectedFlip">镜像：未翻转</p>
             </section>
 
             <section class="info-card" id="remainCard">
-              <h3>颜色统计</h3>
+              <h3>四色进度</h3>
               <ul>
                 <li>
-                  <span class="dot blue"></span> 蓝：块<span id="remainBlue">0</span>
-                  / 已放格<span id="placedBlue">0</span>
-                  / 剩余格<span id="cellsRemainBlue">0</span>
+                  <span class="dot blue"></span> 蓝：还剩<span id="remainBlue">0</span>块
+                  · 已落<span id="placedBlue">0</span>格
                 </li>
                 <li>
-                  <span class="dot red"></span> 红：块<span id="remainRed">0</span>
-                  / 已放格<span id="placedRed">0</span>
-                  / 剩余格<span id="cellsRemainRed">0</span>
+                  <span class="dot red"></span> 红：还剩<span id="remainRed">0</span>块
+                  · 已落<span id="placedRed">0</span>格
                 </li>
                 <li>
-                  <span class="dot yellow"></span> 黄：块<span id="remainYellow">0</span>
-                  / 已放格<span id="placedYellow">0</span>
-                  / 剩余格<span id="cellsRemainYellow">0</span>
+                  <span class="dot yellow"></span> 黄：还剩<span id="remainYellow">0</span>块
+                  · 已落<span id="placedYellow">0</span>格
                 </li>
                 <li>
-                  <span class="dot green"></span> 绿：块<span id="remainGreen">0</span>
-                  / 已放格<span id="placedGreen">0</span>
-                  / 剩余格<span id="cellsRemainGreen">0</span>
+                  <span class="dot green"></span> 绿：还剩<span id="remainGreen">0</span>块
+                  · 已落<span id="placedGreen">0</span>格
                 </li>
               </ul>
             </section>
 
             <section class="info-card" id="playerScoreCard">
-              <h3>玩家统计</h3>
-              <p id="player1Placed">玩家1得分：0</p>
-              <p id="player1Remain">玩家1剩余格：0</p>
-              <p id="player2Placed">玩家2得分：0</p>
-              <p id="player2Remain">玩家2剩余格：0</p>
+              <h3>比分</h3>
+              <p id="player1Placed">玩家1：0 分</p>
+              <p id="player1Remain">剩余格：0</p>
+              <p id="player2Placed">玩家2：0 分</p>
+              <p id="player2Remain">剩余格：0</p>
             </section>
 
             <section class="info-card" id="resultCard">
-              <h3>结算</h3>
+              <h3>结果</h3>
               <p id="resultText">对局进行中</p>
             </section>
 
             <section class="info-card" id="statusCard">
-              <h3>状态</h3>
-              <p id="statusText">请选择当前轮到颜色的拼块</p>
+              <h3>提示</h3>
+              <p id="statusText">请选择一个可用拼块</p>
             </section>
           </aside>
         </section>
@@ -207,8 +203,8 @@
       </div>
     </section>
 
-    <script src="engine.js?v=20260309j"></script>
-    <script src="supabase.js?v=20260309j"></script>
-    <script src="app.js?v=20260309j"></script>
+    <script src="engine.js?v=20260309l"></script>
+    <script src="supabase.js?v=20260309l"></script>
+    <script src="app.js?v=20260309l"></script>
   </body>
 </html>
