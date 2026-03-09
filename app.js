@@ -2133,15 +2133,48 @@ function updateLayout() {
     return;
   }
 
-  const mainShellHeight = Math.max(0, Math.floor(shell.clientHeight));
-  root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
-  const boardAreaWidth = Math.max(0, Math.floor(boardArea.clientWidth));
-  const maxByHeight = Math.max(0, mainShellHeight - 2);
-  const softMaxByViewport = Math.max(0, viewportH - 8);
-  const nextBoardSize = Math.floor(Math.min(boardAreaWidth, maxByHeight, softMaxByViewport));
-  if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {
-    root.style.setProperty("--board-size", `${nextBoardSize}px`);
+  const appW = Math.max(0, Math.floor(app.clientWidth));
+  const appH = Math.max(0, Math.floor(app.clientHeight));
+  root.style.setProperty("--main-shell-height", `${appH}px`);
+
+  // 统一缩放：先算侧栏能力，再让内部字号、间距、拼块一起等比缩放。
+  const sideTarget = clamp(Math.floor(appW * 0.19), 88, 170);
+  const sideScale = clamp(sideTarget / 140, 0.72, 1.08);
+  const heightScale = clamp(appH / 430, 0.72, 1.08);
+  const uiScale = clamp(Math.min(sideScale, heightScale), 0.7, 1.08);
+  const gap = Math.round(clamp(4 * uiScale, 3, 8));
+  const minSide = Math.round(clamp(88 * uiScale, 72, 120));
+
+  const maxByHeight = Math.max(0, appH - 2);
+  let boardSize = Math.min(maxByHeight, appW - 2 * gap - 2 * minSide);
+  if (boardSize < 140) {
+    const tightMinSide = Math.round(clamp(72 * uiScale, 56, 92));
+    boardSize = Math.min(maxByHeight, appW - 2 * gap - 2 * tightMinSide);
   }
+  boardSize = Math.max(80, Math.floor(boardSize));
+
+  let remaining = appW - boardSize - 2 * gap;
+  let side = Math.floor(remaining / 2);
+  const sideMinHard = Math.round(clamp(52 * uiScale, 44, 76));
+  side = Math.max(sideMinHard, side);
+  if (2 * side + boardSize + 2 * gap > appW) {
+    boardSize = Math.max(80, appW - 2 * gap - 2 * side);
+  }
+  remaining = appW - boardSize - 2 * gap;
+  side = Math.max(sideMinHard, Math.floor(remaining / 2));
+
+  root.style.setProperty("--panel-gap", `${gap}px`);
+  root.style.setProperty("--side-panel-width", `${side}px`);
+  root.style.setProperty("--board-size", `${boardSize}px`);
+  root.style.setProperty("--panel-padding", `${Math.round(clamp(5 * uiScale, 3, 8))}px`);
+  root.style.setProperty("--panel-radius", `${Math.round(clamp(12 * uiScale, 8, 16))}px`);
+  root.style.setProperty("--card-radius", `${Math.round(clamp(9 * uiScale, 6, 13))}px`);
+  root.style.setProperty("--card-padding", `${Math.round(clamp(4 * uiScale, 2, 6))}px`);
+  root.style.setProperty("--title-size", `${clamp(10 * uiScale, 8, 14).toFixed(2)}px`);
+  root.style.setProperty("--body-size", `${clamp(8 * uiScale, 6.6, 11).toFixed(2)}px`);
+  root.style.setProperty("--button-height", `${Math.round(clamp(24 * uiScale, 18, 34))}px`);
+  root.style.setProperty("--piece-scale", clamp(side / 135, 0.62, 1.08).toFixed(3));
+  root.style.setProperty("--piece-gap", `${Math.max(1, Math.round(clamp(1.4 * uiScale, 1, 3)))}px`);
 }
 
 function scheduleGameLayoutRefresh() {
