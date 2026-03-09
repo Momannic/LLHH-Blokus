@@ -561,8 +561,10 @@ function renderLobby() {
   const isCreateOpen = state.lobby.action === LOBBY_ACTION_CREATE;
   const isJoinOpen = state.lobby.action === LOBBY_ACTION_JOIN;
 
-  lobby.createPanel.hidden = !isCreateOpen;
-  lobby.joinPanel.hidden = !isJoinOpen;
+  lobby.createPanel.classList.toggle("is-open", isCreateOpen);
+  lobby.joinPanel.classList.toggle("is-open", isJoinOpen);
+  lobby.createPanel.setAttribute("aria-hidden", isCreateOpen ? "false" : "true");
+  lobby.joinPanel.setAttribute("aria-hidden", isJoinOpen ? "false" : "true");
   lobby.createToggleBtn.classList.toggle("is-open", isCreateOpen);
   lobby.joinToggleBtn.classList.toggle("is-open", isJoinOpen);
 
@@ -2372,8 +2374,7 @@ async function init() {
   const presetRoom = getRoomIdFromUrl();
   if (presetRoom && state.dom.lobby.joinRoomCodeInput) {
     state.dom.lobby.joinRoomCodeInput.value = presetRoom;
-    state.lobby.action = LOBBY_ACTION_JOIN;
-    updateLobbyStatus("已从链接读取房间码，请点击“确认加入”");
+    updateLobbyStatus("已从链接读取房间码，点击“加入房间”后确认加入");
   }
   render();
 
