@@ -2163,18 +2163,33 @@ function updateLayout() {
   remaining = appW - boardSize - 2 * gap;
   side = Math.max(sideMinHard, Math.floor(remaining / 2));
 
+  const panelPadding = Math.round(clamp(4.2 * uiScale, 2, 6));
+  const pieceGap = Math.max(2, Math.round(clamp(1.3 * uiScale, 1, 3)));
+  const miniGap = Math.max(1, Math.round(clamp(1.05 * uiScale, 1, 2)));
+  const pieceCardPadding = Math.max(1, Math.round(clamp(1.8 * uiScale, 1, 3)));
+  const sideInner = Math.max(36, side - panelPadding * 2);
+  const pieceCardWidth = Math.max(14, Math.floor((sideInner - pieceGap * 3) / 4));
+  const pieceCellSize = clamp(
+    Math.floor((pieceCardWidth - pieceCardPadding * 2 - miniGap * 4) / 5),
+    4,
+    9
+  );
+
   root.style.setProperty("--panel-gap", `${gap}px`);
   root.style.setProperty("--side-panel-width", `${side}px`);
   root.style.setProperty("--board-size", `${boardSize}px`);
-  root.style.setProperty("--panel-padding", `${Math.round(clamp(4.2 * uiScale, 2, 6))}px`);
+  root.style.setProperty("--panel-padding", `${panelPadding}px`);
   root.style.setProperty("--panel-radius", `${Math.round(clamp(11 * uiScale, 7, 15))}px`);
   root.style.setProperty("--card-radius", `${Math.round(clamp(8 * uiScale, 5, 12))}px`);
   root.style.setProperty("--card-padding", `${Math.round(clamp(3.1 * uiScale, 2, 5))}px`);
   root.style.setProperty("--title-size", `${clamp(9.2 * uiScale, 7.2, 13).toFixed(2)}px`);
   root.style.setProperty("--body-size", `${clamp(7.1 * uiScale, 5.9, 10).toFixed(2)}px`);
-  root.style.setProperty("--button-height", `${Math.round(clamp(21 * uiScale, 16, 30))}px`);
-  root.style.setProperty("--piece-scale", clamp(side / 102, 0.9, 1.3).toFixed(3));
-  root.style.setProperty("--piece-gap", `${Math.max(1, Math.round(clamp(1.1 * uiScale, 1, 2)))}px`);
+  root.style.setProperty("--button-height", `${Math.round(clamp(24 * uiScale, 20, 34))}px`);
+  root.style.setProperty("--piece-scale", clamp(side / 98, 0.96, 1.36).toFixed(3));
+  root.style.setProperty("--piece-gap", `${pieceGap}px`);
+  root.style.setProperty("--piece-mini-gap", `${miniGap}px`);
+  root.style.setProperty("--piece-card-padding", `${pieceCardPadding}px`);
+  root.style.setProperty("--piece-cell-size", `${pieceCellSize}px`);
 }
 
 function scheduleGameLayoutRefresh() {

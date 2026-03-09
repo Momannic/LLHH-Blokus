@@ -12,6 +12,8 @@
   --button-height: 24px;
   --piece-scale: 0.9;
   --piece-gap: 1px;
+  --piece-mini-gap: 1px;
+  --piece-card-padding: 1px;
   --lobby-bg-1: #f4f5fa;
   --lobby-bg-2: #eceef6;
   --lobby-card: #f2f3f7;
@@ -30,7 +32,7 @@
   --board-line: #d9cfbf;
   --board-frame: #f3e2c7;
   --board-size: 300px;
-  --piece-cell-size: calc(9.4px * var(--piece-scale));
+  --piece-cell-size: 6px;
 }
 
 * {
@@ -920,24 +922,23 @@ body {
 }
 
 .piece-color-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-content: flex-start;
-  align-items: flex-start;
+  align-items: start;
   gap: var(--piece-gap);
-  min-height: 100%;
 }
 
 .piece-card {
   border-radius: calc(var(--card-radius) * 0.45);
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(186, 198, 221, 0.68);
-  padding: 0;
+  padding: var(--piece-card-padding);
+  width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: calc(var(--piece-cell-size) * 2 + 2px);
-  min-height: calc(var(--piece-cell-size) * 2 + 2px);
+  min-height: calc(var(--piece-cell-size) * 2 + var(--piece-card-padding) * 2 + 2px);
   cursor: pointer;
   user-select: none;
   touch-action: manipulation;
@@ -970,9 +971,10 @@ body {
 
 .piece-grid {
   display: grid;
-  gap: var(--piece-gap);
+  gap: var(--piece-mini-gap);
   width: auto;
   height: auto;
+  margin: 0 auto;
 }
 
 .mini-cell {
@@ -1203,9 +1205,9 @@ body {
 .info-stack {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
   gap: max(2px, calc(var(--panel-gap) - 1px));
-  overflow: hidden;
+  overflow: auto;
   padding-right: 0;
   align-content: start;
 }
@@ -1353,8 +1355,9 @@ body {
 }
 
 #remainCard {
+  height: auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 #resultCard.is-finished {
