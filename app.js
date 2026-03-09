@@ -2104,8 +2104,15 @@ function handlePiecePoolClick(event) {
 
 function syncAppViewportHeight() {
   const root = document.documentElement;
-  const visualHeight = window.visualViewport?.height;
-  const nextHeight = Math.floor(visualHeight || window.innerHeight || 0);
+  const visualHeight = Number(window.visualViewport?.height || 0);
+  const innerHeight = Number(window.innerHeight || 0);
+  let nextHeight = 0;
+
+  if (visualHeight > 0 && innerHeight > 0) {
+    nextHeight = Math.floor(Math.min(visualHeight, innerHeight));
+  } else {
+    nextHeight = Math.floor(visualHeight || innerHeight || 0);
+  }
 
   if (nextHeight > 0) {
     root.style.setProperty("--app-height", `${nextHeight}px`);
@@ -2119,8 +2126,18 @@ function updateLayout() {
   const boardArea = state.dom.boardArea;
   syncAppViewportHeight();
 
-  const viewportW = Math.floor(window.visualViewport?.width || window.innerWidth || 0);
-  const viewportH = Math.floor(window.visualViewport?.height || window.innerHeight || 0);
+  const visualWidth = Number(window.visualViewport?.width || 0);
+  const innerWidth = Number(window.innerWidth || 0);
+  const visualHeight = Number(window.visualViewport?.height || 0);
+  const innerHeight = Number(window.innerHeight || 0);
+  const viewportW = Math.floor(
+    visualWidth > 0 && innerWidth > 0 ? Math.min(visualWidth, innerWidth) : visualWidth || innerWidth || 0
+  );
+  const viewportH = Math.floor(
+    visualHeight > 0 && innerHeight > 0
+      ? Math.min(visualHeight, innerHeight)
+      : visualHeight || innerHeight || 0
+  );
   if (state.view !== "game") {
     document.body.classList.remove("portrait");
     root.style.setProperty("--main-shell-height", "auto");
@@ -2133,34 +2150,39 @@ function updateLayout() {
     return;
   }
 
-  const appW = Math.max(0, Math.floor(app.clientWidth));
-  const appH = Math.max(0, Math.floor(app.clientHeight));
-  root.style.setProperty("--main-shell-height", `${appH}px`);
+  const appStyles = window.getComputedStyle(app);
+  const appPadX =
+    (parseFloat(appStyles.paddingLeft) || 0) + (parseFloat(appStyles.paddingRight) || 0);
+  const appPadY =
+    (parseFloat(appStyles.paddingTop) || 0) + (parseFloat(appStyles.paddingBottom) || 0);
+  const shellW = Math.max(0, Math.floor(app.clientWidth - appPadX));
+  const shellH = Math.max(0, Math.floor(app.clientHeight - appPadY));
+  root.style.setProperty("--main-shell-height", `${shellH}px`);
 
   // 统一缩放：先算侧栏能力，再让内部字号、间距、拼块一起等比缩放。
-  const sideTarget = clamp(Math.floor(appW * 0.19), 88, 170);
+  const sideTarget = clamp(Math.floor(shellW * 0.19), 88, 170);
   const sideScale = clamp(sideTarget / 140, 0.72, 1.08);
-  const heightScale = clamp(appH / 430, 0.72, 1.08);
+  const heightScale = clamp(shellH / 430, 0.72, 1.08);
   const uiScale = clamp(Math.min(sideScale, heightScale), 0.7, 1.08);
   const gap = Math.round(clamp(3.4 * uiScale, 2, 6));
   const minSide = Math.round(clamp(88 * uiScale, 72, 120));
 
-  const maxByHeight = Math.max(0, appH - 2);
-  let boardSize = Math.min(maxByHeight, appW - 2 * gap - 2 * minSide);
+  const maxByHeight = Math.max(0, shellH - 2);
+  let boardSize = Math.min(maxByHeight, shellW - 2 * gap - 2 * minSide);
   if (boardSize < 140) {
     const tightMinSide = Math.round(clamp(72 * uiScale, 56, 92));
-    boardSize = Math.min(maxByHeight, appW - 2 * gap - 2 * tightMinSide);
+    boardSize = Math.min(maxByHeight, shellW - 2 * gap - 2 * tightMinSide);
   }
   boardSize = Math.max(80, Math.floor(boardSize));
 
-  let remaining = appW - boardSize - 2 * gap;
+  let remaining = shellW - boardSize - 2 * gap;
   let side = Math.floor(remaining / 2);
   const sideMinHard = Math.round(clamp(52 * uiScale, 44, 76));
   side = Math.max(sideMinHard, side);
-  if (2 * side + boardSize + 2 * gap > appW) {
-    boardSize = Math.max(80, appW - 2 * gap - 2 * side);
+  if (2 * side + boardSize + 2 * gap > shellW) {
+    boardSize = Math.max(80, shellW - 2 * gap - 2 * side);
   }
-  remaining = appW - boardSize - 2 * gap;
+  remaining = shellW - boardSize - 2 * gap;
   side = Math.max(sideMinHard, Math.floor(remaining / 2));
 
   const panelPadding = Math.round(clamp(4.2 * uiScale, 2, 6));
