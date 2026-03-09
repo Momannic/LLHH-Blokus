@@ -35,6 +35,9 @@ const {
 
 const PIECE_LONG_PRESS_MS = 420;
 const PIECE_LONG_PRESS_MOVE_CANCEL = 8;
+const MAGNIFIER_RADIUS = 3;
+const MAGNIFIER_WINDOW_SIZE = MAGNIFIER_RADIUS * 2 + 1;
+const MAGNIFIER_MARGIN = 8;
 
 const ROLE_COLORS = {
   host: ["blue", "yellow"],
@@ -93,11 +96,6 @@ const state = {
     pieceId: null,
     rotation: 0,
     flipped: false,
-  },
-  floatingPreviewPos: {
-    active: false,
-    clientX: 0,
-    clientY: 0,
   },
   network: {
     ready: false,
@@ -265,18 +263,6 @@ function syncSerializedState() {
   state.serializedGameState = serializeGameState(state.game);
 }
 
-function clearFloatingPreviewPosition() {
-  state.floatingPreviewPos.active = false;
-  state.floatingPreviewPos.clientX = 0;
-  state.floatingPreviewPos.clientY = 0;
-}
-
-function updateFloatingPreviewPositionFromPointer(event) {
-  state.floatingPreviewPos.active = true;
-  state.floatingPreviewPos.clientX = event.clientX;
-  state.floatingPreviewPos.clientY = event.clientY;
-}
-
 function clearPiecePoolGestureState() {
   if (state.piecePoolGesture.timerId !== null) {
     clearTimeout(state.piecePoolGesture.timerId);
@@ -322,7 +308,6 @@ function clearTransientSelection() {
   state.selectedFlipped = false;
   state.previewAnchor = null;
   state.preview = null;
-  clearFloatingPreviewPosition();
   state.boardPointer.active = false;
   state.boardPointer.pointerId = null;
 }
@@ -577,6 +562,15 @@ function maybeAutoScrollCurrentTurnSection() {
   state.lastScrolledTurnColor = turnColor;
 }
 
+function getCornerColorAt(row, col) {
+  for (const [color, corner] of Object.entries(CORNER_BY_COLOR)) {
+    if (corner.row === row && corner.col === col) {
+      return color;
+    }
+  }
+  return "";
+}
+
 function renderFloatingPreview() {
   const floating = state.dom.floatingPiece;
   const floatingGrid = state.dom.floatingPieceGrid;
@@ -586,7 +580,14 @@ function renderFloatingPreview() {
     return;
   }
 
-  if (!state.selectedPieceId || state.game.gameOver || !state.floatingPreviewPos.active) {
+  const shouldShow =
+    Boolean(state.selectedPieceId) &&
+    state.boardPointer.active &&
+    Boolean(state.previewAnchor) &&
+    Boolean(state.preview) &&
+    !state.game.gameOver;
+
+  if (!shouldShow) {
     floating.classList.remove("is-visible");
     floatingGrid.innerHTML = "";
     floating.style.left = "";
@@ -594,54 +595,72 @@ function renderFloatingPreview() {
     return;
   }
 
-  const selectedPiece = getPieceById(state.selectedPieceId);
-  if (!selectedPiece) {
-    floating.classList.remove("is-visible");
-    floatingGrid.innerHTML = "";
-    return;
+  const centerRow = state.preview.anchorRow;
+  const centerCol = state.preview.anchorCol;
+  const previewCellSet = new Set((state.preview.cells || []).map((cell) => getCellKey(cell.row, cell.col)));
+
+  floatingGrid.innerHTML = "";
+  floatingGrid.style.gridTemplateColumns = `repeat(${MAGNIFIER_WINDOW_SIZE}, var(--magnifier-cell-size))`;
+  floatingGrid.style.gridTemplateRows = `repeat(${MAGNIFIER_WINDOW_SIZE}, var(--magnifier-cell-size))`;
+
+  for (let row = centerRow - MAGNIFIER_RADIUS; row <= centerRow + MAGNIFIER_RADIUS; row += 1) {
+    for (let col = centerCol - MAGNIFIER_RADIUS; col <= centerCol + MAGNIFIER_RADIUS; col += 1) {
+      const miniCell = document.createElement("i");
+      miniCell.className = "magnifier-cell";
+
+      if (!isInBounds(row, col)) {
+        miniCell.classList.add("is-out");
+        floatingGrid.appendChild(miniCell);
+        continue;
+      }
+
+      const occupied = state.game.boardMatrix[row][col];
+      if (occupied) {
+        miniCell.classList.add(`placed-${occupied.color}`);
+      }
+
+      if (previewCellSet.has(getCellKey(row, col))) {
+        miniCell.classList.add("preview");
+        if (state.preview.valid) {
+          miniCell.classList.add(`preview-${state.preview.color}`);
+        } else {
+          miniCell.classList.add("preview-invalid");
+        }
+      }
+
+      if (row === centerRow && col === centerCol) {
+        miniCell.classList.add("preview-anchor");
+      }
+
+      const cornerColor = getCornerColorAt(row, col);
+      if (cornerColor) {
+        miniCell.classList.add(`start-corner-${cornerColor}`);
+        const firstDone = Boolean(state.game.firstMoveDoneByColor?.[cornerColor]);
+        miniCell.classList.add(firstDone ? "start-corner-done" : "start-corner-active");
+      }
+
+      floatingGrid.appendChild(miniCell);
+    }
   }
 
-  const transformed = getTransformedShape(
-    selectedPiece.shape,
-    state.selectedRotation,
-    state.selectedFlipped
-  );
-
-  drawMiniShapeFromPoints(floatingGrid, transformed, selectedPiece.color);
-
-  const viewportPadding = 8;
-  const pointerX = state.floatingPreviewPos.clientX;
-  const pointerY = state.floatingPreviewPos.clientY;
-
-  const floatW = floating.offsetWidth || 72;
-  const floatH = floating.offsetHeight || 72;
   const boardAreaRect = boardArea.getBoundingClientRect();
+  const floatW = floating.offsetWidth || 190;
+  const floatH = floating.offsetHeight || 190;
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
 
-  let x = pointerX + 28;
-  let y = pointerY - floatH - 18;
+  let left = Math.round(boardAreaRect.left + (boardAreaRect.width - floatW) / 2);
+  let top = Math.round(boardAreaRect.top - floatH - MAGNIFIER_MARGIN);
 
-  if (x + floatW > window.innerWidth - viewportPadding) {
-    x = pointerX - floatW - 28;
-  }
-  if (x < viewportPadding) {
-    x = viewportPadding;
-  }
-
-  if (y < viewportPadding) {
-    y = pointerY + 22;
-  }
-  if (y + floatH > window.innerHeight - viewportPadding) {
-    y = window.innerHeight - floatH - viewportPadding;
+  if (top < MAGNIFIER_MARGIN) {
+    top = Math.round(boardAreaRect.top + MAGNIFIER_MARGIN);
   }
 
-  let localLeft = x - boardAreaRect.left;
-  let localTop = y - boardAreaRect.top;
+  left = Math.max(MAGNIFIER_MARGIN, Math.min(left, viewportW - floatW - MAGNIFIER_MARGIN));
+  top = Math.max(MAGNIFIER_MARGIN, Math.min(top, viewportH - floatH - MAGNIFIER_MARGIN));
 
-  localLeft = Math.max(0, Math.min(localLeft, Math.max(0, boardAreaRect.width - floatW)));
-  localTop = Math.max(0, Math.min(localTop, Math.max(0, boardAreaRect.height - floatH)));
-
-  floating.style.left = `${Math.round(localLeft)}px`;
-  floating.style.top = `${Math.round(localTop)}px`;
+  floating.style.left = `${left}px`;
+  floating.style.top = `${top}px`;
   floating.classList.add("is-visible");
 }
 
@@ -1073,8 +1092,6 @@ function startBoardPointerTracking(event) {
 
   state.boardPointer.active = true;
   state.boardPointer.pointerId = event.pointerId;
-  updateFloatingPreviewPositionFromPointer(event);
-  renderFloatingPreview();
 
   if (state.dom.board.setPointerCapture) {
     try {
@@ -1085,6 +1102,7 @@ function startBoardPointerTracking(event) {
   }
 
   updatePreviewFromPointer(event);
+  renderFloatingPreview();
   event.preventDefault();
 }
 
@@ -1093,9 +1111,8 @@ function handleBoardPointerMove(event) {
     return;
   }
 
-  updateFloatingPreviewPositionFromPointer(event);
-  renderFloatingPreview();
   updatePreviewFromPointer(event);
+  renderFloatingPreview();
   event.preventDefault();
 }
 
@@ -1114,7 +1131,6 @@ function stopBoardPointerTracking(event) {
 
   state.boardPointer.active = false;
   state.boardPointer.pointerId = null;
-  clearFloatingPreviewPosition();
   renderFloatingPreview();
 }
 
