@@ -1830,16 +1830,28 @@ function handlePiecePoolClick(event) {
   selectPiece(pieceId);
 }
 
+function syncAppViewportHeight() {
+  const root = document.documentElement;
+  const visualHeight = window.visualViewport?.height;
+  const nextHeight = Math.floor(visualHeight || window.innerHeight || 0);
+
+  if (nextHeight > 0) {
+    root.style.setProperty("--app-height", `${nextHeight}px`);
+  }
+}
+
 function updateLayout() {
   const root = document.documentElement;
   const app = document.getElementById("app");
   const shell = document.querySelector(".main-shell");
   const controls = document.querySelector(".control-panel");
+  syncAppViewportHeight();
 
-  const viewportW = window.innerWidth;
-  const viewportH = window.innerHeight;
+  const viewportW = Math.floor(window.visualViewport?.width || window.innerWidth || 0);
+  const viewportH = Math.floor(window.visualViewport?.height || window.innerHeight || 0);
   if (state.view !== "game") {
     document.body.classList.remove("portrait");
+    root.style.setProperty("--main-shell-height", "auto");
     return;
   }
 
@@ -1859,14 +1871,23 @@ function updateLayout() {
   const shellPadY = parseFloat(shellStyles.paddingTop || 0) + parseFloat(shellStyles.paddingBottom || 0);
   const columnGap = parseFloat(shellStyles.columnGap);
 
-  const controlsH = controls.getBoundingClientRect().height;
-  const sideMin = parseFloat(window.getComputedStyle(root).getPropertyValue("--side-min") || "84");
+  const controlsH = controls.getBoundingClientRect().height || 0;
+  const appInnerWidth = app.clientWidth;
+  const appInnerHeight = app.clientHeight;
 
-  const maxByHeight = viewportH - appPadY - rowGap - controlsH - shellPadY;
-  const maxByWidth = viewportW - appPadX - 2 * sideMin - 2 * columnGap;
+  const dynamicSideMin = clamp(Math.floor(viewportW * 0.13), 70, 140);
+  root.style.setProperty("--side-min", `${dynamicSideMin}px`);
 
-  const boardSize = Math.max(220, Math.floor(Math.min(maxByHeight, maxByWidth)));
-  root.style.setProperty("--board-size", `${boardSize}px`);
+  const mainShellHeight = Math.max(0, Math.floor(appInnerHeight - appPadY - rowGap - controlsH));
+  root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
+
+  const maxByHeight = mainShellHeight - shellPadY;
+  const maxByWidth = appInnerWidth - appPadX - 2 * dynamicSideMin - 2 * columnGap;
+
+  const nextBoardSize = Math.floor(Math.min(maxByHeight, maxByWidth));
+  if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {
+    root.style.setProperty("--board-size", `${nextBoardSize}px`);
+  }
 }
 
 function buildRealtimeSyncMessage(room) {
@@ -2290,6 +2311,10 @@ function bindEvents() {
 
   window.addEventListener("resize", updateLayout);
   window.addEventListener("orientationchange", updateLayout);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateLayout);
+    window.visualViewport.addEventListener("scroll", updateLayout);
+  }
 }
 
 function cacheDom() {

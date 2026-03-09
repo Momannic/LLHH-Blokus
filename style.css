@@ -1,4 +1,6 @@
 :root {
+  --app-height: 100dvh;
+  --main-shell-height: auto;
   --lobby-bg-1: #f4f5fa;
   --lobby-bg-2: #eceef6;
   --lobby-card: #f2f3f7;
@@ -43,10 +45,10 @@ body {
 .lobby-view,
 .game-view {
   width: 100vw;
-  height: 100dvh;
 }
 
 .lobby-view {
+  height: 100dvh;
   overflow-y: auto;
   padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
     max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
@@ -532,6 +534,13 @@ body {
   }
 }
 
+.game-view {
+  height: var(--app-height);
+  min-height: var(--app-height);
+  max-height: var(--app-height);
+  overflow: hidden;
+}
+
 .game-view .app {
   background: radial-gradient(circle at 12% 12%, rgba(243, 109, 183, 0.12), transparent 34%),
     radial-gradient(circle at 88% 84%, rgba(94, 166, 238, 0.12), transparent 36%),
@@ -540,8 +549,8 @@ body {
 
 .app {
   position: relative;
-  height: 100dvh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
     max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   display: grid;
@@ -551,11 +560,14 @@ body {
 }
 
 .main-shell {
+  height: var(--main-shell-height, 100%);
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(var(--side-min), 1fr) var(--board-size) minmax(var(--side-min), 1fr);
+  grid-template-columns: minmax(var(--side-min), 1fr) minmax(0, var(--board-size))
+    minmax(var(--side-min), 1fr);
   gap: clamp(8px, 1.2vw, 14px);
-  align-items: center;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .panel {
@@ -731,14 +743,19 @@ body {
 
 .board-area {
   min-width: 0;
-  display: grid;
-  place-items: center;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
+  overflow: hidden;
 }
 
 .board-frame {
   width: var(--board-size);
   height: var(--board-size);
+  max-width: 100%;
+  max-height: 100%;
   border-radius: clamp(16px, 2.2vh, 24px);
   padding: clamp(6px, 1.2vh, 10px);
   background: linear-gradient(180deg, #ffffff, #f4f7fc);
@@ -1016,6 +1033,7 @@ body {
   border-radius: 20px;
   box-shadow: 0 8px 20px rgba(103, 119, 153, 0.2);
   padding: clamp(7px, 1.1vh, 11px);
+  z-index: 2;
 }
 
 .control-panel button {
