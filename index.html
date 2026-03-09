@@ -14,7 +14,7 @@
     <meta property="og:site_name" content="来来回回Blokus" />
     <meta property="og:type" content="website" />
     <meta property="og:description" content="来来回回Blokus - 在线联机方块棋" />
-    <link rel="stylesheet" href="style.css?v=20260309p" />
+    <link rel="stylesheet" href="style.css?v=20260309q" />
   </head>
   <body>
     <section id="lobbyView" class="lobby-view">
@@ -155,90 +155,79 @@
           <aside class="panel right-panel">
             <header class="panel-header">
               <h2>对局信息</h2>
-              <p>实时动态</p>
+              <p>轻触按钮完成本回合操作</p>
             </header>
 
-            <section class="info-card room-card" id="roomCard">
-              <h3>房间</h3>
-              <p id="roomCode">还没进入房间</p>
-              <p id="roomRole">先创建或加入一局</p>
-              <p id="roomStatus">等待开局</p>
-              <p id="roomCanAct">加入后会显示行动提示</p>
-              <p id="roomHint">点击下方复制按钮可分享房间链接</p>
-              <div class="room-actions room-actions-only-copy">
-                <button id="btnCreateRoom" type="button">创建房间</button>
-                <button id="btnCopyRoomLink" type="button">复制房间链接</button>
+            <div class="info-stack">
+              <section class="info-card room-card" id="roomCard">
+                <h3 id="roomCode">房间 --</h3>
+                <p id="roomStatus">轮到蓝色行动</p>
+                <p id="roomCanAct">请选择一个拼块</p>
+                <p id="roomHint">等待全员准备后开局</p>
+                <p id="statusText">请选择一个可用拼块</p>
+                <div class="room-actions room-actions-only-copy">
+                  <button id="btnCopyRoomLink" type="button">复制房间链接</button>
+                </div>
+              </section>
+
+              <section class="info-card" id="turnCard">
+                <h3>回合</h3>
+                <p id="turnPlayer">轮到蓝色</p>
+                <p id="turnNumber">第 1 手</p>
+                <p id="turnColors">现在是蓝色回合</p>
+                <p id="turnMode">2人模式</p>
+              </section>
+
+              <section class="info-card" id="remainCard">
+                <h3>四色进度</h3>
+                <ul>
+                  <li>
+                    <span class="dot blue"></span> 蓝：<span id="remainBlue">0</span>块 ·
+                    <span id="placedBlue">0</span>格
+                  </li>
+                  <li>
+                    <span class="dot red"></span> 红：<span id="remainRed">0</span>块 ·
+                    <span id="placedRed">0</span>格
+                  </li>
+                  <li>
+                    <span class="dot yellow"></span> 黄：<span id="remainYellow">0</span>块 ·
+                    <span id="placedYellow">0</span>格
+                  </li>
+                  <li>
+                    <span class="dot green"></span> 绿：<span id="remainGreen">0</span>块 ·
+                    <span id="placedGreen">0</span>格
+                  </li>
+                </ul>
+                <div class="sr-only" aria-hidden="true">
+                  <span id="cellsRemainBlue">0</span>
+                  <span id="cellsRemainRed">0</span>
+                  <span id="cellsRemainYellow">0</span>
+                  <span id="cellsRemainGreen">0</span>
+                </div>
+              </section>
+
+              <section class="info-card" id="resultCard">
+                <h3>结果</h3>
+                <div id="scoreList" class="score-list"></div>
+                <p id="resultText">对局进行中</p>
+              </section>
+            </div>
+
+            <section class="action-panel" aria-label="操作区">
+              <div class="action-grid">
+                <button id="btnRotate" type="button">旋转</button>
+                <button id="btnFlip" type="button">翻转</button>
+                <button id="btnCancel" type="button" class="danger">重选</button>
+                <button id="btnPlace" type="button" class="ok">放置</button>
               </div>
-            </section>
-
-            <section class="info-card" id="turnCard">
-              <h3>回合</h3>
-              <p id="turnPlayer">蓝色先手</p>
-              <p id="turnNumber">第 1 手</p>
-              <p id="turnColors">现在是蓝色回合</p>
-            </section>
-
-            <section class="info-card" id="selectedCard">
-              <h3>手中拼块</h3>
-              <p id="selectedPiece">还没选拼块</p>
-              <p id="selectedColor">从左侧选择本回合可用拼块</p>
-              <p id="selectedRotation">朝向：默认</p>
-              <p id="selectedFlip">镜像：未翻转</p>
-            </section>
-
-            <section class="info-card" id="remainCard">
-              <h3>四色进度</h3>
-              <ul>
-                <li>
-                  <span class="dot blue"></span> 蓝：还剩<span id="remainBlue">0</span>块
-                  · 已落<span id="placedBlue">0</span>格
-                </li>
-                <li>
-                  <span class="dot red"></span> 红：还剩<span id="remainRed">0</span>块
-                  · 已落<span id="placedRed">0</span>格
-                </li>
-                <li>
-                  <span class="dot yellow"></span> 黄：还剩<span id="remainYellow">0</span>块
-                  · 已落<span id="placedYellow">0</span>格
-                </li>
-                <li>
-                  <span class="dot green"></span> 绿：还剩<span id="remainGreen">0</span>块
-                  · 已落<span id="placedGreen">0</span>格
-                </li>
-              </ul>
-            </section>
-
-            <section class="info-card" id="playerScoreCard">
-              <h3>比分</h3>
-              <p id="player1Placed">玩家1：0 分</p>
-              <p id="player1Remain">剩余格：0</p>
-              <p id="player2Placed">玩家2：0 分</p>
-              <p id="player2Remain">剩余格：0</p>
-            </section>
-
-            <section class="info-card" id="resultCard">
-              <h3>结果</h3>
-              <p id="resultText">对局进行中</p>
-            </section>
-
-            <section class="info-card" id="statusCard">
-              <h3>提示</h3>
-              <p id="statusText">请选择一个可用拼块</p>
             </section>
           </aside>
         </section>
-
-        <footer class="control-panel" aria-label="控制面板">
-          <button id="btnRotate" type="button">旋转</button>
-          <button id="btnFlip" type="button">翻转</button>
-          <button id="btnPlace" type="button" class="ok">放置</button>
-          <button id="btnCancel" type="button" class="danger">取消</button>
-        </footer>
       </div>
     </section>
 
-    <script src="engine.js?v=20260309p"></script>
-    <script src="supabase.js?v=20260309p"></script>
-    <script src="app.js?v=20260309p"></script>
+    <script src="engine.js?v=20260309q"></script>
+    <script src="supabase.js?v=20260309q"></script>
+    <script src="app.js?v=20260309q"></script>
   </body>
 </html>

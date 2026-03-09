@@ -206,6 +206,7 @@ const state = {
   selectedPieceId: null,
   selectedRotation: 0,
   selectedFlipped: false,
+  pendingPlacement: null,
   previewAnchor: null,
   preview: null,
   message: "先创建或加入一个房间吧",
@@ -783,6 +784,7 @@ function clearTransientSelection() {
   state.selectedPieceId = null;
   state.selectedRotation = 0;
   state.selectedFlipped = false;
+  state.pendingPlacement = null;
   state.previewAnchor = null;
   state.preview = null;
   state.boardPointer.active = false;
@@ -997,19 +999,24 @@ function renderPiecePool() {
       return;
     }
 
+    const isPendingUsed = Boolean(
+      state.pendingPlacement && state.pendingPlacement.move?.pieceId === piece.pieceId
+    );
+    const isUsed = piece.used || isPendingUsed;
     const isSelected = state.selectedPieceId === piece.pieceId;
     const canSelectThisPiece =
-      !piece.used &&
+      !isUsed &&
+      !state.pendingPlacement &&
       canCurrentClientOperate() &&
       canClientUseColor(piece.color) &&
       canUseColorThisTurn(piece.color);
 
-    const isTurnLocked = !piece.used && !canSelectThisPiece;
+    const isTurnLocked = !isUsed && !canSelectThisPiece;
 
     card.classList.toggle("is-selected", isSelected);
-    card.classList.toggle("is-used", piece.used);
+    card.classList.toggle("is-used", isUsed);
     card.classList.toggle("is-turn-locked", isTurnLocked);
-    card.setAttribute("aria-disabled", piece.used || isTurnLocked ? "true" : "false");
+    card.setAttribute("aria-disabled", isUsed || isTurnLocked ? "true" : "false");
   });
 
   syncSelectedPieceMiniPreview();
@@ -1276,6 +1283,11 @@ function renderPreview() {
 }
 
 function renderBoard() {
+  const pendingCellSet = new Set(
+    (state.pendingPlacement?.cells || []).map((cell) => getCellKey(cell.row, cell.col))
+  );
+  const pendingColor = state.pendingPlacement?.color || "";
+
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const cell = state.dom.boardCells.get(getCellKey(row, col));
@@ -1287,6 +1299,8 @@ function renderBoard() {
       const occupied = state.game.boardMatrix[row][col];
       if (occupied) {
         cell.classList.add(`placed-${occupied.color}`);
+      } else if (pendingCellSet.has(getCellKey(row, col)) && pendingColor) {
+        cell.classList.add(`placed-${pendingColor}`, "placed-pending");
       }
     }
   }
@@ -1306,80 +1320,97 @@ function renderBoard() {
 }
 
 function getResultText(scores) {
-  if (!state.game.gameOver) {
-    return "对局进行中";
+  const seats = getPlayerSeatsByMode(state.roomConfig.mode);
+  const seatScores = seats.map((seat) => {
+    const total = COLOR_ORDER.reduce((sum, color) => {
+      if (state.roomConfig.colorOwner[color] !== seat) {
+        return sum;
+      }
+      return sum + (scores.placedCellsByColor[color] || 0);
+    }, 0);
+    return {
+      seat,
+      name: getDisplayNameForSeat(seat) || getDefaultNicknameBySeat(seat),
+      total,
+    };
+  });
+
+  const sorted = [...seatScores].sort((a, b) => b.total - a.total);
+  const top = sorted[0];
+  const tied = sorted.filter((item) => item.total === top.total);
+
+  if (state.game.gameOver) {
+    if (tied.length > 1) {
+      return "对局结束，平局";
+    }
+    return `对局结束，${top.name}获胜`;
   }
 
-  const player1Name = getDisplayNameForSeat("player1") || "玩家1";
-  const player2Name = getDisplayNameForSeat("player2") || "玩家2";
-
-  if (scores.winner === "player1") {
-    return `对局结束，${player1Name}获胜（${scores.player1Placed} : ${scores.player2Placed}）`;
+  if (tied.length > 1) {
+    return "对局进行中，比分接近";
   }
-
-  if (scores.winner === "player2") {
-    return `对局结束，${player2Name}获胜（${scores.player2Placed} : ${scores.player1Placed}）`;
-  }
-
-  return `对局结束，平局（${scores.player1Placed} : ${scores.player2Placed}）`;
+  return `对局进行中，${top.name}领先`;
 }
 
 function updateRoomCardUI() {
   const room = state.network.room;
   const roomId = state.network.roomId;
   const roomStatus = getEffectiveRoomStatus();
-  const role = state.network.role;
   const canAct = canCurrentClientOperate();
 
   if (!roomId || !room) {
-    state.dom.ui.roomCode.textContent = "还没进入房间";
-    state.dom.ui.roomRole.textContent = "先在大厅创建或加入一局";
-    state.dom.ui.roomStatus.textContent = "等待开局";
-    state.dom.ui.roomCanAct.textContent = "进入房间后会显示行动提示";
-
-    if (!state.network.ready) {
-      state.dom.ui.roomHint.textContent = "联机服务连接中，稍后会自动恢复";
-    } else {
-      state.dom.ui.roomHint.textContent = "先进入房间，稍后可复制房间链接";
+    if (state.dom.ui.roomCode) {
+      state.dom.ui.roomCode.textContent = "房间 --";
     }
-
-    state.dom.buttons.createRoom.disabled = state.network.creatingRoom;
+    if (state.dom.ui.roomStatus) {
+      state.dom.ui.roomStatus.textContent = "先创建或加入房间";
+    }
+    if (state.dom.ui.roomCanAct) {
+      state.dom.ui.roomCanAct.textContent = "进入房间后可开始对局";
+    }
+    if (state.dom.ui.roomHint) {
+      state.dom.ui.roomHint.textContent = !state.network.ready
+        ? "联机服务连接中，稍后会自动恢复"
+        : "进入房间后可以复制邀请链接";
+    }
     state.dom.buttons.copyRoomLink.disabled = true;
     return;
   }
 
-  state.dom.ui.roomCode.textContent = `房间 ${room.id}`;
-  const roleName = /^player[1-4]$/.test(role) ? getDisplayNameForSeat(role) : getSeatLabel(role);
-  state.dom.ui.roomRole.textContent = /^player[1-4]$/.test(role)
-    ? `你是 ${roleName}`
-    : "你正在观战";
-  state.dom.ui.roomStatus.textContent = `${ROOM_STATUS_LABEL[roomStatus] || roomStatus} · ${
-    state.roomConfig.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式"
-  }`;
-  state.dom.ui.roomCanAct.textContent = canAct
-    ? `轮到你行动（${COLOR_LABEL[getCurrentTurnColor()]}色）`
-    : `当前是${COLOR_LABEL[getCurrentTurnColor()]}色回合`;
+  const turnColor = getCurrentTurnColor();
+  if (state.dom.ui.roomCode) {
+    state.dom.ui.roomCode.textContent = `房间 ${room.id}`;
+  }
+  if (state.dom.ui.roomStatus) {
+    state.dom.ui.roomStatus.textContent = `轮到${getPlayerNameByColor(turnColor)}（${COLOR_LABEL[turnColor]}色）`;
+  }
+  if (state.dom.ui.roomCanAct) {
+    state.dom.ui.roomCanAct.textContent = canAct ? "轮到你行动" : `等待${getPlayerNameByColor(turnColor)}落子`;
+  }
 
   if (roomStatus === "waiting") {
     const waitingSeats = getWaitingSeats();
     if (waitingSeats.length > 0) {
-      state.dom.ui.roomHint.textContent = `等待${waitingSeats
-        .map((seat) => getDisplayNameForSeat(seat) || getSeatLabel(seat))
-        .join("、")}入座`;
+      if (state.dom.ui.roomHint) {
+        state.dom.ui.roomHint.textContent = `等待${waitingSeats
+          .map((seat) => getDisplayNameForSeat(seat) || getSeatLabel(seat))
+          .join("、")}入座`;
+      }
     } else {
-      state.dom.ui.roomHint.textContent = "玩家已就位，马上开始";
+      if (state.dom.ui.roomHint) {
+        state.dom.ui.roomHint.textContent = "玩家已就位，马上开始";
+      }
     }
   } else if (roomStatus === "playing") {
-    if (canAct) {
-      state.dom.ui.roomHint.textContent = "可以落子了，选个拼块试试";
-    } else {
-      state.dom.ui.roomHint.textContent = `等待${getPlayerNameByColor(getCurrentTurnColor())}落子`;
+    if (state.dom.ui.roomHint) {
+      state.dom.ui.roomHint.textContent = canAct ? "请选择一个拼块开始落子" : "等待对手落子";
     }
   } else {
-    state.dom.ui.roomHint.textContent = "这局已经结束，可复制链接回看结果";
+    if (state.dom.ui.roomHint) {
+      state.dom.ui.roomHint.textContent = "这局已经结束，可复制链接回看结果";
+    }
   }
 
-  state.dom.buttons.createRoom.disabled = true;
   state.dom.buttons.copyRoomLink.disabled = false;
 }
 
@@ -1387,32 +1418,17 @@ function updateTurnUI() {
   const turnColor = getCurrentTurnColor();
   const turnPlayerName = getPlayerNameByColor(turnColor);
   const scores = state.game.scores || calculateScores(state.game);
-  const player1Name = getDisplayNameForSeat("player1") || "玩家1";
-  const player2Name = getDisplayNameForSeat("player2") || "玩家2";
 
   state.dom.ui.turnPlayer.textContent = `轮到 ${turnPlayerName}`;
   state.dom.ui.turnNumber.textContent = `第 ${state.game.turnCount} 手`;
-  state.dom.ui.turnColors.textContent = `现在是${COLOR_LABEL[turnColor]}色回合`;
-
-  if (state.selectedPieceId) {
-    const selectedPiece = getPieceById(state.selectedPieceId);
-    if (selectedPiece) {
-      state.dom.ui.selectedPiece.textContent = `已拿起${COLOR_LABEL[selectedPiece.color]}色拼块`;
-      state.dom.ui.selectedColor.textContent = "滑动棋盘可预览落点";
-      state.dom.ui.selectedRotation.textContent =
-        state.selectedRotation === 0 ? "朝向：默认" : `已旋转 ${state.selectedRotation}°`;
-      state.dom.ui.selectedFlip.textContent = state.selectedFlipped
-        ? "镜像：已翻转"
-        : "镜像：未翻转";
-    }
-  } else {
-    state.dom.ui.selectedPiece.textContent = "还没选拼块";
-    state.dom.ui.selectedColor.textContent = "从左侧挑一个可用拼块";
-    state.dom.ui.selectedRotation.textContent = "朝向：默认";
-    state.dom.ui.selectedFlip.textContent = "镜像：未翻转";
+  state.dom.ui.turnColors.textContent = `当前颜色：${COLOR_LABEL[turnColor]}`;
+  if (state.dom.ui.turnMode) {
+    state.dom.ui.turnMode.textContent = state.roomConfig.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式";
   }
 
-  state.dom.ui.statusText.textContent = state.message;
+  if (state.dom.ui.statusText) {
+    state.dom.ui.statusText.textContent = state.message;
+  }
 
   COLOR_ORDER.forEach((color) => {
     const key = `${color[0].toUpperCase()}${color.slice(1)}`;
@@ -1433,10 +1449,24 @@ function updateTurnUI() {
     }
   });
 
-  state.dom.ui.player1Placed.textContent = `${player1Name}：${scores.player1Placed} 分`;
-  state.dom.ui.player1Remain.textContent = `剩余格：${scores.player1Remain}`;
-  state.dom.ui.player2Placed.textContent = `${player2Name}：${scores.player2Placed} 分`;
-  state.dom.ui.player2Remain.textContent = `剩余格：${scores.player2Remain}`;
+  if (state.dom.ui.scoreList) {
+    state.dom.ui.scoreList.innerHTML = "";
+    const seats = getPlayerSeatsByMode(state.roomConfig.mode);
+    seats.forEach((seat) => {
+      const name = getDisplayNameForSeat(seat) || getDefaultNicknameBySeat(seat);
+      const total = COLOR_ORDER.reduce((sum, color) => {
+        if (state.roomConfig.colorOwner[color] !== seat) {
+          return sum;
+        }
+        return sum + (scores.placedCellsByColor[color] || 0);
+      }, 0);
+
+      const line = document.createElement("p");
+      line.className = "score-line";
+      line.textContent = `${name}：${total}分`;
+      state.dom.ui.scoreList.appendChild(line);
+    });
+  }
 
   state.dom.ui.resultText.textContent = getResultText(scores);
   state.dom.ui.resultCard.classList.toggle("is-finished", state.game.gameOver);
@@ -1445,15 +1475,26 @@ function updateTurnUI() {
 }
 
 function renderControls() {
+  const hasPending = Boolean(state.pendingPlacement);
   const hasSelected = Boolean(state.selectedPieceId);
-  const canOperate = hasSelected && canCurrentClientOperate() && !state.network.syncingMove;
+  const canOperate = hasSelected && canCurrentClientOperate() && !state.network.syncingMove && !hasPending;
   const canPlace = canOperate && Boolean(state.preview?.valid);
 
   state.dom.buttons.rotate.disabled = !canOperate;
   state.dom.buttons.flip.disabled = !canOperate;
-  state.dom.buttons.place.disabled = !canPlace;
-  state.dom.buttons.place.classList.toggle("is-ready", canPlace);
-  state.dom.buttons.cancel.disabled = state.game.gameOver || (!hasSelected && !state.preview);
+
+  if (hasPending) {
+    state.dom.buttons.place.textContent = "下一回合";
+    state.dom.buttons.place.disabled = !canCurrentClientOperate() || state.network.syncingMove;
+    state.dom.buttons.place.classList.add("is-ready");
+  } else {
+    state.dom.buttons.place.textContent = "放置";
+    state.dom.buttons.place.disabled = !canPlace;
+    state.dom.buttons.place.classList.toggle("is-ready", canPlace);
+  }
+
+  state.dom.buttons.cancel.textContent = "重选";
+  state.dom.buttons.cancel.disabled = state.game.gameOver || hasPending || (!hasSelected && !state.preview);
 }
 
 function render() {
@@ -1478,6 +1519,12 @@ function render() {
 function selectPiece(pieceId) {
   if (state.game.gameOver) {
     state.message = "这局已经结束了";
+    render();
+    return;
+  }
+
+  if (state.pendingPlacement) {
+    state.message = "这一步已落子，点击“下一回合”继续";
     render();
     return;
   }
@@ -1545,6 +1592,12 @@ function refreshPreviewForCurrentAnchor(successMessage) {
 }
 
 function rotateSelectedPiece() {
+  if (state.pendingPlacement) {
+    state.message = "这一步已落子，点击“下一回合”继续";
+    render();
+    return;
+  }
+
   const blockReason = getCannotOperateReason();
   if (blockReason) {
     state.message = blockReason;
@@ -1563,6 +1616,12 @@ function rotateSelectedPiece() {
 }
 
 function flipSelectedPiece() {
+  if (state.pendingPlacement) {
+    state.message = "这一步已落子，点击“下一回合”继续";
+    render();
+    return;
+  }
+
   const blockReason = getCannotOperateReason();
   if (blockReason) {
     state.message = blockReason;
@@ -1581,6 +1640,10 @@ function flipSelectedPiece() {
 }
 
 function updatePreviewAt(row, col) {
+  if (state.pendingPlacement) {
+    return;
+  }
+
   if (!state.selectedPieceId) {
     state.message = "先从左侧选一个拼块";
     render();
@@ -1648,6 +1711,10 @@ function updatePreviewFromPointer(event) {
 }
 
 function startBoardPointerTracking(event) {
+  if (state.pendingPlacement) {
+    return;
+  }
+
   const blockReason = getCannotOperateReason();
   if (blockReason) {
     state.message = blockReason;
@@ -1744,6 +1811,78 @@ async function placePiece() {
     return;
   }
 
+  if (state.pendingPlacement) {
+    const moveSnapshot = { ...state.pendingPlacement.move };
+    const recheck = canPlaceMove(state.game, moveSnapshot);
+    if (!recheck.valid) {
+      state.pendingPlacement = null;
+      state.message = `该落子已失效：${recheck.reason}`;
+      render();
+      return;
+    }
+
+    const localResult = applyMove(state.game, moveSnapshot);
+    if (!localResult.ok) {
+      state.pendingPlacement = null;
+      state.message = `这一步暂时行不通：${localResult.reason}`;
+      render();
+      return;
+    }
+
+    const message = buildPlaceSuccessMessage(localResult, moveSnapshot);
+    state.network.syncingMove = true;
+    render();
+
+    try {
+      const payload = {
+        game_state: serializeRoomGameState(localResult.state, state.roomConfig),
+        current_turn_color: localResult.state.currentTurnColor,
+        status: localResult.state.gameOver ? "finished" : "playing",
+        winner: localResult.state.winner,
+        updated_at: new Date().toISOString(),
+      };
+
+      const updatedRoom = await sbUpdateRoomState(
+        state.network.client,
+        state.network.roomId,
+        payload,
+        state.network.lastRoomUpdatedAt
+      );
+
+      applyRoomSnapshot(updatedRoom, {
+        message,
+        fromRealtime: false,
+      });
+
+      if (typeof sbInsertMove === "function") {
+        sbInsertMove(state.network.client, {
+          roomId: state.network.roomId,
+          turnNumber: state.game.turnCount - 1,
+          color: localResult.placedColor,
+          pieceId: moveSnapshot.pieceId,
+          rotation: moveSnapshot.rotation,
+          flipped: moveSnapshot.flipped,
+          anchorRow: moveSnapshot.anchorRow,
+          anchorCol: moveSnapshot.anchorCol,
+          createdBy: state.network.userId,
+        }).catch((error) => {
+          console.warn("记录 moves 日志失败:", error);
+        });
+      }
+    } catch (error) {
+      try {
+        await syncRoomFromServer("房间有新变化，已自动刷新到最新局面");
+      } catch (_syncError) {
+        state.message = `落子未完成：${error.message || String(error)}`;
+        render();
+      }
+    } finally {
+      state.network.syncingMove = false;
+      render();
+    }
+    return;
+  }
+
   const blockReason = getCannotOperateReason();
   if (blockReason) {
     state.message = blockReason;
@@ -1769,67 +1908,18 @@ async function placePiece() {
     return;
   }
 
-  const localResult = applyMove(state.game, state.preview.move);
-  if (!localResult.ok) {
-    state.message = `这一步暂时行不通：${localResult.reason}`;
-    render();
-    return;
-  }
-
-  const moveSnapshot = { ...state.preview.move };
-  const message = buildPlaceSuccessMessage(localResult, moveSnapshot);
-
-  state.network.syncingMove = true;
+  state.pendingPlacement = {
+    move: { ...state.preview.move },
+    color: state.preview.color,
+    cells: state.preview.cells.map((cell) => ({ row: cell.row, col: cell.col })),
+  };
+  state.selectedPieceId = null;
+  state.selectedRotation = 0;
+  state.selectedFlipped = false;
+  state.previewAnchor = null;
+  state.preview = null;
+  state.message = "已落子，确认无误后点击“下一回合”";
   render();
-
-  try {
-    const payload = {
-      game_state: serializeRoomGameState(localResult.state, state.roomConfig),
-      current_turn_color: localResult.state.currentTurnColor,
-      status: localResult.state.gameOver ? "finished" : "playing",
-      winner: localResult.state.winner,
-      updated_at: new Date().toISOString(),
-    };
-
-    const updatedRoom = await sbUpdateRoomState(
-      state.network.client,
-      state.network.roomId,
-      payload,
-      state.network.lastRoomUpdatedAt
-    );
-
-    applyRoomSnapshot(updatedRoom, {
-      message,
-      fromRealtime: false,
-    });
-
-    if (typeof sbInsertMove === "function") {
-      sbInsertMove(state.network.client, {
-        roomId: state.network.roomId,
-        turnNumber: state.game.turnCount - 1,
-        color: localResult.placedColor,
-        pieceId: moveSnapshot.pieceId,
-        rotation: moveSnapshot.rotation,
-        flipped: moveSnapshot.flipped,
-        anchorRow: moveSnapshot.anchorRow,
-        anchorCol: moveSnapshot.anchorCol,
-        createdBy: state.network.userId,
-      }).catch((error) => {
-        // moves 表仅做日志，不影响主流程
-        console.warn("记录 moves 日志失败:", error);
-      });
-    }
-  } catch (error) {
-    try {
-      await syncRoomFromServer("房间有新变化，已自动刷新到最新局面");
-    } catch (_syncError) {
-      state.message = `落子未完成：${error.message || String(error)}`;
-      render();
-    }
-  } finally {
-    state.network.syncingMove = false;
-    render();
-  }
 }
 
 function startPieceLongPress(event, card, pieceId) {
@@ -1998,7 +2088,6 @@ function updateLayout() {
   const root = document.documentElement;
   const app = document.getElementById("app");
   const shell = document.querySelector(".main-shell");
-  const controls = document.querySelector(".control-panel");
   syncAppViewportHeight();
 
   const viewportW = Math.floor(window.visualViewport?.width || window.innerWidth || 0);
@@ -2011,34 +2100,25 @@ function updateLayout() {
 
   document.body.classList.toggle("portrait", viewportW < viewportH);
 
-  if (!app || !shell || !controls) {
+  if (!app || !shell) {
     return;
   }
 
-  const appStyles = window.getComputedStyle(app);
   const shellStyles = window.getComputedStyle(shell);
+  const columnGap =
+    parseFloat(shellStyles.columnGap) || parseFloat(shellStyles.gap) || 0;
+  const appInnerWidth = Math.max(0, Math.floor(app.clientWidth));
+  const appInnerHeight = Math.max(0, Math.floor(app.clientHeight));
 
-  const appPadX = parseFloat(appStyles.paddingLeft) + parseFloat(appStyles.paddingRight);
-  const appPadY = parseFloat(appStyles.paddingTop) + parseFloat(appStyles.paddingBottom);
-  const rowGap = parseFloat(appStyles.rowGap);
-
-  const shellPadY = parseFloat(shellStyles.paddingTop || 0) + parseFloat(shellStyles.paddingBottom || 0);
-  const columnGap = parseFloat(shellStyles.columnGap);
-
-  const controlsH = controls.getBoundingClientRect().height || 0;
-  const appInnerWidth = app.clientWidth;
-  const appInnerHeight = app.clientHeight;
-
-  const dynamicSideMin = clamp(Math.floor(viewportW * 0.13), 70, 140);
+  const dynamicSideMin = clamp(Math.floor(viewportW * 0.16), 120, 260);
   root.style.setProperty("--side-min", `${dynamicSideMin}px`);
-
-  const mainShellHeight = Math.max(0, Math.floor(appInnerHeight - appPadY - rowGap - controlsH));
+  const mainShellHeight = Math.max(0, appInnerHeight);
   root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
 
-  const maxByHeight = mainShellHeight - shellPadY;
-  const maxByWidth = appInnerWidth - appPadX - 2 * dynamicSideMin - 2 * columnGap;
-
-  const nextBoardSize = Math.floor(Math.min(maxByHeight, maxByWidth));
+  const maxByHeight = Math.max(0, mainShellHeight - 2);
+  const maxByWidth = Math.max(0, appInnerWidth - 2 * dynamicSideMin - 2 * columnGap);
+  const softMaxByViewport = Math.max(0, viewportH - 28);
+  const nextBoardSize = Math.floor(Math.min(maxByHeight, maxByWidth, softMaxByViewport));
   if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {
     root.style.setProperty("--board-size", `${nextBoardSize}px`);
   }
@@ -2582,12 +2662,7 @@ function bindEvents() {
   state.dom.buttons.cancel.addEventListener("click", () => {
     clearSelection("已取消当前选择");
   });
-  state.dom.buttons.createRoom.addEventListener("click", () => {
-    setView("lobby");
-    setLobbyAction(LOBBY_ACTION_CREATE);
-    render();
-  });
-  state.dom.buttons.copyRoomLink.addEventListener("click", copyRoomLink);
+  state.dom.buttons.copyRoomLink?.addEventListener("click", copyRoomLink);
 
   state.dom.waiting.backBtn?.addEventListener("click", handleWaitingBack);
   state.dom.waiting.readyBtn?.addEventListener("click", toggleReadyInWaitingRoom);
@@ -2663,7 +2738,6 @@ function cacheDom() {
     flip: document.getElementById("btnFlip"),
     place: document.getElementById("btnPlace"),
     cancel: document.getElementById("btnCancel"),
-    createRoom: document.getElementById("btnCreateRoom"),
     copyRoomLink: document.getElementById("btnCopyRoomLink"),
   };
 
@@ -2671,17 +2745,11 @@ function cacheDom() {
     turnPlayer: document.getElementById("turnPlayer"),
     turnNumber: document.getElementById("turnNumber"),
     turnColors: document.getElementById("turnColors"),
-    selectedPiece: document.getElementById("selectedPiece"),
-    selectedColor: document.getElementById("selectedColor"),
-    selectedRotation: document.getElementById("selectedRotation"),
-    selectedFlip: document.getElementById("selectedFlip"),
+    turnMode: document.getElementById("turnMode"),
     statusText: document.getElementById("statusText"),
     resultCard: document.getElementById("resultCard"),
     resultText: document.getElementById("resultText"),
-    player1Placed: document.getElementById("player1Placed"),
-    player1Remain: document.getElementById("player1Remain"),
-    player2Placed: document.getElementById("player2Placed"),
-    player2Remain: document.getElementById("player2Remain"),
+    scoreList: document.getElementById("scoreList"),
     remainBlue: document.getElementById("remainBlue"),
     remainYellow: document.getElementById("remainYellow"),
     remainGreen: document.getElementById("remainGreen"),
@@ -2695,7 +2763,6 @@ function cacheDom() {
     cellsRemainGreen: document.getElementById("cellsRemainGreen"),
     cellsRemainRed: document.getElementById("cellsRemainRed"),
     roomCode: document.getElementById("roomCode"),
-    roomRole: document.getElementById("roomRole"),
     roomStatus: document.getElementById("roomStatus"),
     roomCanAct: document.getElementById("roomCanAct"),
     roomHint: document.getElementById("roomHint"),
