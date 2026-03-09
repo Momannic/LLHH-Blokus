@@ -18,7 +18,8 @@
   --board-bg: #f9f5eb;
   --board-line: #d9cfbf;
   --board-frame: #f3e2c7;
-  --side-min: 84px;
+  --left-col-width: 122px;
+  --right-col-width: 142px;
   --board-size: 300px;
   --piece-cell-size: clamp(9px, 1.3vh, 12px);
 }
@@ -813,8 +814,8 @@ body {
   height: var(--main-shell-height, 100%);
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(var(--side-min), 1fr) minmax(0, var(--board-size))
-    minmax(var(--side-min), 1fr);
+  grid-template-columns: minmax(88px, var(--left-col-width)) minmax(0, 1fr)
+    minmax(104px, var(--right-col-width));
   gap: clamp(6px, 0.9vw, 10px);
   align-items: stretch;
   overflow: hidden;
@@ -994,7 +995,7 @@ body {
   min-width: 0;
   min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   position: relative;
   overflow: hidden;

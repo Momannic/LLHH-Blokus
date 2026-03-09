@@ -248,6 +248,9 @@ const state = {
     lastRoomUpdatedAt: null,
     unsubscribeRoom: null,
   },
+  layout: {
+    gameRefreshScheduled: false,
+  },
   dom: {
     lobbyView: null,
     waitingView: null,
@@ -1515,6 +1518,8 @@ function renderControls() {
 }
 
 function render() {
+  const gameJustShown = Boolean(state.dom.gameView && state.view === "game" && state.dom.gameView.hidden);
+
   renderLobby();
   renderWaiting();
   if (state.dom.gameView) {
@@ -1524,6 +1529,12 @@ function render() {
   if (state.view !== "game") {
     return;
   }
+
+  if (gameJustShown) {
+    updateLayout();
+    scheduleGameLayoutRefresh();
+  }
+
   renderPiecePool();
   maybeAutoScrollCurrentTurnSection();
   renderBoard();
@@ -2127,18 +2138,42 @@ function updateLayout() {
   const appInnerWidth = Math.max(0, Math.floor(app.clientWidth));
   const appInnerHeight = Math.max(0, Math.floor(app.clientHeight));
 
-  const dynamicSideMin = clamp(Math.floor(viewportW * 0.12), 88, 160);
-  root.style.setProperty("--side-min", `${dynamicSideMin}px`);
+  const leftColWidth = clamp(Math.floor(viewportW * 0.2), 92, 150);
+  const rightColWidth = clamp(Math.floor(viewportW * 0.23), 106, 180);
+  root.style.setProperty("--left-col-width", `${leftColWidth}px`);
+  root.style.setProperty("--right-col-width", `${rightColWidth}px`);
   const mainShellHeight = Math.max(0, appInnerHeight);
   root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
 
+  const boardAreaWidth = Math.max(0, Math.floor(state.dom.boardArea?.clientWidth || 0));
   const maxByHeight = Math.max(0, mainShellHeight - 2);
-  const maxByWidth = Math.max(0, appInnerWidth - 2 * dynamicSideMin - 2 * columnGap);
+  const maxByWidth =
+    boardAreaWidth > 0
+      ? Math.max(0, boardAreaWidth - 2)
+      : Math.max(0, appInnerWidth - leftColWidth - rightColWidth - 2 * columnGap);
   const softMaxByViewport = Math.max(0, viewportH - 28);
   const nextBoardSize = Math.floor(Math.min(maxByHeight, maxByWidth, softMaxByViewport));
   if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {
     root.style.setProperty("--board-size", `${nextBoardSize}px`);
   }
+}
+
+function scheduleGameLayoutRefresh() {
+  if (state.layout.gameRefreshScheduled) {
+    return;
+  }
+
+  state.layout.gameRefreshScheduled = true;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      state.layout.gameRefreshScheduled = false;
+      if (state.view !== "game") {
+        return;
+      }
+      updateLayout();
+      render();
+    });
+  });
 }
 
 function cancelPendingPlacement() {
@@ -2223,8 +2258,12 @@ function applyRoomSnapshot(room, options = {}) {
     setView(state.waitingDismissed ? "lobby" : "waiting");
   }
 
-  updateLayout();
   render();
+  if (state.view === "game") {
+    scheduleGameLayoutRefresh();
+  } else {
+    updateLayout();
+  }
 }
 
 function subscribeCurrentRoom(roomId) {
@@ -2580,8 +2619,12 @@ async function handleLobbyReturnRoom() {
   state.waitingDismissed = false;
   const roomStatus = state.network.room.status || "waiting";
   setView(roomStatus === "waiting" ? "waiting" : "game");
-  updateLayout();
   render();
+  if (state.view === "game") {
+    scheduleGameLayoutRefresh();
+  } else {
+    updateLayout();
+  }
 }
 
 async function toggleReadyInWaitingRoom() {
