@@ -2137,20 +2137,33 @@ function updateLayout() {
     parseFloat(shellStyles.columnGap) || parseFloat(shellStyles.gap) || 0;
   const appInnerWidth = Math.max(0, Math.floor(app.clientWidth));
   const appInnerHeight = Math.max(0, Math.floor(app.clientHeight));
-
-  const leftColWidth = clamp(Math.floor(viewportW * 0.2), 92, 150);
-  const rightColWidth = clamp(Math.floor(viewportW * 0.23), 106, 180);
-  root.style.setProperty("--left-col-width", `${leftColWidth}px`);
-  root.style.setProperty("--right-col-width", `${rightColWidth}px`);
   const mainShellHeight = Math.max(0, appInnerHeight);
   root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
 
-  const boardAreaWidth = Math.max(0, Math.floor(state.dom.boardArea?.clientWidth || 0));
+  const minLeft = 84;
+  const maxLeft = 140;
+  const minRight = 96;
+  const maxRight = 164;
   const maxByHeight = Math.max(0, mainShellHeight - 2);
-  const maxByWidth =
-    boardAreaWidth > 0
-      ? Math.max(0, boardAreaWidth - 2)
-      : Math.max(0, appInnerWidth - leftColWidth - rightColWidth - 2 * columnGap);
+  const targetBoardByHeight = maxByHeight;
+  const availableForSides = appInnerWidth - targetBoardByHeight - 2 * columnGap;
+
+  let leftColWidth = minLeft;
+  let rightColWidth = minRight;
+  let boardWidthCap = Math.max(0, appInnerWidth - minLeft - minRight - 2 * columnGap);
+
+  if (availableForSides >= minLeft + minRight) {
+    const weightedLeft = Math.round(availableForSides * 0.46);
+    leftColWidth = clamp(weightedLeft, minLeft, maxLeft);
+    rightColWidth = clamp(availableForSides - leftColWidth, minRight, maxRight);
+    boardWidthCap = Math.max(0, appInnerWidth - leftColWidth - rightColWidth - 2 * columnGap);
+  }
+
+  root.style.setProperty("--left-col-width", `${leftColWidth}px`);
+  root.style.setProperty("--right-col-width", `${rightColWidth}px`);
+
+  const boardAreaWidth = Math.max(0, Math.floor(state.dom.boardArea?.clientWidth || 0));
+  const maxByWidth = boardAreaWidth > 0 ? Math.max(0, boardAreaWidth - 2) : boardWidthCap;
   const softMaxByViewport = Math.max(0, viewportH - 28);
   const nextBoardSize = Math.floor(Math.min(maxByHeight, maxByWidth, softMaxByViewport));
   if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {

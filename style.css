@@ -18,10 +18,10 @@
   --board-bg: #f9f5eb;
   --board-line: #d9cfbf;
   --board-frame: #f3e2c7;
-  --left-col-width: 122px;
-  --right-col-width: 142px;
+  --left-col-width: 108px;
+  --right-col-width: 122px;
   --board-size: 300px;
-  --piece-cell-size: clamp(9px, 1.3vh, 12px);
+  --piece-cell-size: clamp(7px, 0.95vh, 10px);
 }
 
 * {
@@ -814,9 +814,9 @@ body {
   height: var(--main-shell-height, 100%);
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(88px, var(--left-col-width)) minmax(0, 1fr)
-    minmax(104px, var(--right-col-width));
-  gap: clamp(6px, 0.9vw, 10px);
+  grid-template-columns: minmax(84px, var(--left-col-width)) minmax(0, var(--board-size))
+    minmax(96px, var(--right-col-width));
+  gap: clamp(4px, 0.6vw, 7px);
   align-items: stretch;
   overflow: hidden;
 }
@@ -826,13 +826,13 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: clamp(5px, 0.8vh, 8px);
+  gap: clamp(4px, 0.65vh, 7px);
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid rgba(183, 197, 222, 0.5);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(245, 247, 252, 0.9));
   box-shadow: 0 8px 20px rgba(96, 109, 140, 0.14);
-  padding: clamp(6px, 1vw, 9px);
+  padding: clamp(4px, 0.75vw, 7px);
 }
 
 .panel-header {
@@ -843,7 +843,7 @@ body {
 
 .panel-header h2 {
   margin: 0;
-  font-size: clamp(12px, 1.85vh, 16px);
+  font-size: clamp(11px, 1.55vh, 14px);
   line-height: 1.1;
   color: #2f4361;
 }
@@ -851,7 +851,7 @@ body {
 .panel-header p {
   margin: 0;
   opacity: 0.86;
-  font-size: clamp(9px, 1.3vh, 11px);
+  font-size: clamp(8px, 1.05vh, 10px);
   color: #6b7d97;
 }
 
@@ -860,16 +860,16 @@ body {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 0 1px 1px;
+  gap: 2px;
+  padding: 0;
   scrollbar-width: thin;
 }
 
 .piece-color-section {
   border: 1px solid rgba(176, 190, 216, 0.5);
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.72);
-  padding: 2px;
+  padding: 1px;
   transition: opacity 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
@@ -887,8 +887,8 @@ body {
 }
 
 .piece-color-title {
-  margin: 0 0 2px;
-  font-size: clamp(9px, 1.2vh, 11px);
+  margin: 0 0 1px;
+  font-size: clamp(8px, 1vh, 10px);
   line-height: 1;
   font-weight: 900;
 }
@@ -914,19 +914,19 @@ body {
   flex-wrap: wrap;
   align-content: flex-start;
   align-items: flex-start;
-  gap: 2px;
+  gap: 1px;
 }
 
 .piece-card {
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(186, 198, 221, 0.68);
-  padding: 1px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: calc(var(--piece-cell-size) * 2 + 4px);
-  min-height: calc(var(--piece-cell-size) * 2 + 4px);
+  min-width: calc(var(--piece-cell-size) * 2 + 2px);
+  min-height: calc(var(--piece-cell-size) * 2 + 2px);
   cursor: pointer;
   user-select: none;
   touch-action: manipulation;
@@ -965,7 +965,7 @@ body {
 }
 
 .mini-cell {
-  border-radius: 2px;
+  border-radius: 1px;
   background: transparent;
   width: var(--piece-cell-size);
   height: var(--piece-cell-size);
@@ -1006,8 +1006,8 @@ body {
   height: var(--board-size);
   max-width: 100%;
   max-height: 100%;
-  border-radius: clamp(16px, 2.2vh, 24px);
-  padding: clamp(6px, 1.2vh, 10px);
+  border-radius: clamp(13px, 1.8vh, 18px);
+  padding: clamp(4px, 0.8vh, 7px);
   background: linear-gradient(180deg, #ffffff, #f4f7fc);
   border: 1px solid rgba(189, 201, 225, 0.7);
   box-shadow: 0 10px 24px rgba(97, 112, 145, 0.2);
@@ -1016,7 +1016,7 @@ body {
 .board {
   width: 100%;
   height: 100%;
-  border-radius: clamp(10px, 1.5vh, 14px);
+  border-radius: clamp(8px, 1.25vh, 11px);
   display: grid;
   grid-template-columns: repeat(20, 1fr);
   grid-template-rows: repeat(20, 1fr);
@@ -1182,18 +1182,19 @@ body {
 .right-panel {
   min-height: 0;
   overflow: hidden;
-  padding-right: 2px;
+  padding-right: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .info-stack {
   min-height: 0;
-  flex: 1 1 auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: min-content;
-  gap: 6px;
-  overflow: auto;
-  padding-right: 1px;
+  gap: 4px;
+  overflow: hidden;
+  padding-right: 0;
   align-content: start;
 }
 
@@ -1214,23 +1215,24 @@ body {
 }
 
 .info-card {
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid rgba(186, 198, 221, 0.56);
   background: rgba(255, 255, 255, 0.82);
-  padding: clamp(5px, 0.8vh, 8px);
+  padding: clamp(4px, 0.55vh, 6px);
   box-shadow: 0 4px 10px rgba(108, 122, 154, 0.11);
 }
 
 .info-card h3 {
-  margin: 0 0 3px;
-  font-size: clamp(11px, 1.6vh, 14px);
+  margin: 0 0 2px;
+  font-size: clamp(10px, 1.35vh, 12px);
   color: #324661;
 }
 
 .info-card p,
 .info-card li {
-  margin: 1px 0;
-  font-size: clamp(9px, 1.3vh, 11px);
+  margin: 0;
+  font-size: clamp(8px, 1.02vh, 10px);
+  line-height: 1.22;
   list-style: none;
   color: #4c5f7e;
 }
@@ -1247,15 +1249,28 @@ body {
 
 #roomHint {
   opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #statusText {
   font-weight: 800;
   color: #2f4462;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+#roomCanAct {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .room-actions {
-  margin-top: 4px;
+  margin-top: 3px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
@@ -1268,8 +1283,8 @@ body {
 .room-actions button {
   border: 0;
   border-radius: 10px;
-  min-height: 27px;
-  font-size: clamp(9px, 1.25vh, 11px);
+  min-height: 24px;
+  font-size: clamp(8px, 0.95vh, 10px);
   font-weight: 800;
   color: #345072;
   background: linear-gradient(180deg, #f6f9ff, #e8eef9);
@@ -1288,8 +1303,8 @@ body {
 
 .dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   margin-right: 6px;
 }
@@ -1312,7 +1327,8 @@ body {
 
 .score-list {
   display: grid;
-  gap: 1px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px 6px;
 }
 
 .score-line {
@@ -1321,8 +1337,14 @@ body {
 }
 
 #resultText {
-  margin-top: 3px;
+  margin-top: 2px;
   font-weight: 800;
+}
+
+#remainCard ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px 6px;
 }
 
 #resultCard.is-finished {
@@ -1332,24 +1354,24 @@ body {
 
 .action-panel {
   flex: 0 0 auto;
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid rgba(186, 198, 221, 0.58);
   background: rgba(252, 253, 255, 0.9);
   box-shadow: 0 4px 10px rgba(108, 122, 154, 0.11);
-  padding: 6px;
+  padding: 4px;
 }
 
 .action-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
 .action-grid button {
   border: 0;
-  border-radius: 12px;
-  min-height: clamp(30px, 5.2vh, 40px);
-  font-size: clamp(11px, 1.65vh, 14px);
+  border-radius: 10px;
+  min-height: clamp(27px, 4.4vh, 34px);
+  font-size: clamp(10px, 1.25vh, 12px);
   font-weight: 800;
   color: #334a68;
   background: linear-gradient(180deg, #fff8fc, #f2ecf5);
@@ -1431,7 +1453,7 @@ body.portrait .rotate-hint {
 
 @media (max-width: 920px) {
   .main-shell {
-    gap: 6px;
+    gap: 4px;
   }
 }
 
