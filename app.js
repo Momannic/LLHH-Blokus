@@ -2116,6 +2116,7 @@ function updateLayout() {
   const root = document.documentElement;
   const app = document.getElementById("app");
   const shell = document.querySelector(".main-shell");
+  const boardArea = state.dom.boardArea;
   syncAppViewportHeight();
 
   const viewportW = Math.floor(window.visualViewport?.width || window.innerWidth || 0);
@@ -2128,44 +2129,16 @@ function updateLayout() {
 
   document.body.classList.toggle("portrait", viewportW < viewportH);
 
-  if (!app || !shell) {
+  if (!app || !shell || !boardArea) {
     return;
   }
 
-  const shellStyles = window.getComputedStyle(shell);
-  const columnGap =
-    parseFloat(shellStyles.columnGap) || parseFloat(shellStyles.gap) || 0;
-  const appInnerWidth = Math.max(0, Math.floor(app.clientWidth));
-  const appInnerHeight = Math.max(0, Math.floor(app.clientHeight));
-  const mainShellHeight = Math.max(0, appInnerHeight);
+  const mainShellHeight = Math.max(0, Math.floor(shell.clientHeight));
   root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
-
-  const minLeft = 84;
-  const maxLeft = 140;
-  const minRight = 96;
-  const maxRight = 164;
+  const boardAreaWidth = Math.max(0, Math.floor(boardArea.clientWidth));
   const maxByHeight = Math.max(0, mainShellHeight - 2);
-  const targetBoardByHeight = maxByHeight;
-  const availableForSides = appInnerWidth - targetBoardByHeight - 2 * columnGap;
-
-  let leftColWidth = minLeft;
-  let rightColWidth = minRight;
-  let boardWidthCap = Math.max(0, appInnerWidth - minLeft - minRight - 2 * columnGap);
-
-  if (availableForSides >= minLeft + minRight) {
-    const weightedLeft = Math.round(availableForSides * 0.46);
-    leftColWidth = clamp(weightedLeft, minLeft, maxLeft);
-    rightColWidth = clamp(availableForSides - leftColWidth, minRight, maxRight);
-    boardWidthCap = Math.max(0, appInnerWidth - leftColWidth - rightColWidth - 2 * columnGap);
-  }
-
-  root.style.setProperty("--left-col-width", `${leftColWidth}px`);
-  root.style.setProperty("--right-col-width", `${rightColWidth}px`);
-
-  const boardAreaWidth = Math.max(0, Math.floor(state.dom.boardArea?.clientWidth || 0));
-  const maxByWidth = boardAreaWidth > 0 ? Math.max(0, boardAreaWidth - 2) : boardWidthCap;
-  const softMaxByViewport = Math.max(0, viewportH - 28);
-  const nextBoardSize = Math.floor(Math.min(maxByHeight, maxByWidth, softMaxByViewport));
+  const softMaxByViewport = Math.max(0, viewportH - 8);
+  const nextBoardSize = Math.floor(Math.min(boardAreaWidth, maxByHeight, softMaxByViewport));
   if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {
     root.style.setProperty("--board-size", `${nextBoardSize}px`);
   }

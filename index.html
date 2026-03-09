@@ -14,7 +14,7 @@
     <meta property="og:site_name" content="来来回回Blokus" />
     <meta property="og:type" content="website" />
     <meta property="og:description" content="来来回回Blokus - 在线联机方块棋" />
-    <link rel="stylesheet" href="style.css?v=20260309u" />
+    <link rel="stylesheet" href="style.css?v=20260309v" />
   </head>
   <body>
     <section id="lobbyView" class="lobby-view">
@@ -153,11 +153,6 @@
           </main>
 
           <aside class="panel right-panel">
-            <header class="panel-header">
-              <h2>对局信息</h2>
-              <p>轻触按钮完成本回合操作</p>
-            </header>
-
             <div class="info-stack">
               <section class="info-card room-card" id="roomCard">
                 <h3 id="roomCode">房间 --</h3>
@@ -170,13 +165,21 @@
                 </div>
               </section>
 
-              <section class="info-card" id="turnCard">
-                <h3>回合</h3>
-                <p id="turnPlayer">轮到蓝色</p>
-                <p id="turnNumber">第 1 手</p>
-                <p id="turnColors">现在是蓝色回合</p>
-                <p id="turnMode">2人模式</p>
-              </section>
+              <div class="info-row">
+                <section class="info-card" id="turnCard">
+                  <h3>回合</h3>
+                  <p id="turnPlayer">轮到蓝色</p>
+                  <p id="turnNumber">第 1 手</p>
+                  <p id="turnColors">现在是蓝色回合</p>
+                  <p id="turnMode">2人模式</p>
+                </section>
+
+                <section class="info-card" id="resultCard">
+                  <h3>结果</h3>
+                  <div id="scoreList" class="score-list"></div>
+                  <p id="resultText">对局进行中</p>
+                </section>
+              </div>
 
               <section class="info-card" id="remainCard">
                 <h3>四色进度</h3>
@@ -205,12 +208,6 @@
                   <span id="cellsRemainGreen">0</span>
                 </div>
               </section>
-
-              <section class="info-card" id="resultCard">
-                <h3>结果</h3>
-                <div id="scoreList" class="score-list"></div>
-                <p id="resultText">对局进行中</p>
-              </section>
             </div>
 
             <section class="action-panel" aria-label="操作区">
@@ -226,8 +223,8 @@
       </div>
     </section>
 
-    <script src="engine.js?v=20260309u"></script>
-    <script src="supabase.js?v=20260309u"></script>
-    <script src="app.js?v=20260309u"></script>
+    <script src="engine.js?v=20260309v"></script>
+    <script src="supabase.js?v=20260309v"></script>
+    <script src="app.js?v=20260309v"></script>
   </body>
 </html>
