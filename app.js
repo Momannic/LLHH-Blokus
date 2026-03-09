@@ -11,8 +11,6 @@ const {
   TURN_ORDER,
   COLOR_ORDER,
   COLOR_LABEL,
-  PLAYER_BY_COLOR,
-  PLAYER_CONFIG,
   createInitialGameState,
   canPlaceMove,
   applyMove,
@@ -26,7 +24,6 @@ const {
   createSupabaseClient: sbCreateSupabaseClient,
   ensureAnonymousAuth: sbEnsureAnonymousAuth,
   createRoom: sbCreateRoom,
-  joinRoom: sbJoinRoom,
   loadRoom: sbLoadRoom,
   updateRoomState: sbUpdateRoomState,
   subscribeToRoom: sbSubscribeToRoom,
@@ -38,19 +35,23 @@ const PIECE_LONG_PRESS_MOVE_CANCEL = 8;
 const MAGNIFIER_RADIUS = 3;
 const MAGNIFIER_WINDOW_SIZE = MAGNIFIER_RADIUS * 2 + 1;
 const MAGNIFIER_MARGIN = 8;
+const GAME_MODE_TWO_PLAYER = "2p";
+const GAME_MODE_FOUR_PLAYER = "4p";
+const ROOM_GAME_STATE_VERSION = 2;
 
-const ROLE_COLORS = {
-  host: ["blue", "yellow"],
-  guest: ["red", "green"],
-  spectator: [],
-  none: [],
-};
-
-const ROLE_LABEL = {
-  host: "玩家1（蓝/黄）",
-  guest: "玩家2（红/绿）",
-  spectator: "观战",
-  none: "未加入",
+const COLOR_OWNER_BY_MODE = {
+  [GAME_MODE_TWO_PLAYER]: {
+    blue: "player1",
+    red: "player2",
+    yellow: "player1",
+    green: "player2",
+  },
+  [GAME_MODE_FOUR_PLAYER]: {
+    blue: "player1",
+    red: "player2",
+    yellow: "player3",
+    green: "player4",
+  },
 };
 
 const ROOM_STATUS_LABEL = {
@@ -66,8 +67,87 @@ const CORNER_BY_COLOR = {
   green: { row: BOARD_SIZE - 1, col: 0 },
 };
 
+function normalizeGameMode(mode) {
+  return mode === GAME_MODE_FOUR_PLAYER ? GAME_MODE_FOUR_PLAYER : GAME_MODE_TWO_PLAYER;
+}
+
+function getPlayerSeatsByMode(mode) {
+  return normalizeGameMode(mode) === GAME_MODE_FOUR_PLAYER
+    ? ["player1", "player2", "player3", "player4"]
+    : ["player1", "player2"];
+}
+
+function createDefaultColorOwner(mode) {
+  const normalizedMode = normalizeGameMode(mode);
+  return { ...COLOR_OWNER_BY_MODE[normalizedMode] };
+}
+
+function normalizeColorOwner(owner, mode) {
+  const defaults = createDefaultColorOwner(mode);
+  if (!owner || typeof owner !== "object") {
+    return defaults;
+  }
+
+  const output = { ...defaults };
+  COLOR_ORDER.forEach((color) => {
+    const value = owner[color];
+    if (typeof value === "string" && /^player[1-4]$/.test(value)) {
+      output[color] = value;
+    }
+  });
+  return output;
+}
+
+function createEmptyPlayerUserMap(mode) {
+  const output = {};
+  getPlayerSeatsByMode(mode).forEach((seat) => {
+    output[seat] = null;
+  });
+  return output;
+}
+
+function normalizePlayerUserMap(map, mode) {
+  const output = createEmptyPlayerUserMap(mode);
+  if (!map || typeof map !== "object") {
+    return output;
+  }
+
+  Object.keys(output).forEach((seat) => {
+    const value = map[seat];
+    output[seat] = typeof value === "string" && value ? value : null;
+  });
+  return output;
+}
+
+function getSeatLabel(seat) {
+  if (typeof seat !== "string") {
+    return "未加入";
+  }
+  if (seat === "spectator") {
+    return "观战";
+  }
+  if (seat === "none") {
+    return "未加入";
+  }
+  const match = seat.match(/^player([1-4])$/);
+  if (match) {
+    return `玩家${match[1]}`;
+  }
+  return "未加入";
+}
+
+function createDefaultRoomConfig(mode) {
+  const normalizedMode = normalizeGameMode(mode);
+  return {
+    mode: normalizedMode,
+    colorOwner: createDefaultColorOwner(normalizedMode),
+    playerUserMap: createEmptyPlayerUserMap(normalizedMode),
+  };
+}
+
 const state = {
   game: createInitialGameState(),
+  roomConfig: createDefaultRoomConfig(GAME_MODE_TWO_PLAYER),
   selectedPieceId: null,
   selectedRotation: 0,
   selectedFlipped: false,
@@ -139,12 +219,13 @@ function canUseColorThisTurn(color) {
 }
 
 function getPlayerByColor(color) {
-  return PLAYER_BY_COLOR[color];
+  const seat = state.roomConfig.colorOwner[color];
+  const match = typeof seat === "string" ? seat.match(/^player([1-4])$/) : null;
+  return match ? Number(match[1]) : 1;
 }
 
 function getPlayerNameByColor(color) {
-  const player = getPlayerByColor(color);
-  return PLAYER_CONFIG[player]?.name || "玩家";
+  return `玩家${getPlayerByColor(color)}`;
 }
 
 function getPieceById(pieceId) {
@@ -192,25 +273,142 @@ function getRoomLink(roomId) {
   return url.toString();
 }
 
+function getRequestedGameModeFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const mode = (params.get("mode") || "").trim();
+  const players = (params.get("players") || "").trim();
+
+  if (mode === "4" || mode === GAME_MODE_FOUR_PLAYER || players === "4") {
+    return GAME_MODE_FOUR_PLAYER;
+  }
+
+  return GAME_MODE_TWO_PLAYER;
+}
+
+function serializeRoomGameState(gameState, roomConfig) {
+  const safeConfig = roomConfig || createDefaultRoomConfig(GAME_MODE_TWO_PLAYER);
+  return JSON.stringify({
+    version: ROOM_GAME_STATE_VERSION,
+    mode: normalizeGameMode(safeConfig.mode),
+    colorOwner: normalizeColorOwner(safeConfig.colorOwner, safeConfig.mode),
+    playerUserMap: normalizePlayerUserMap(safeConfig.playerUserMap, safeConfig.mode),
+    engineState: serializeGameState(gameState),
+  });
+}
+
+function parseRoomGameState(rawGameState, room) {
+  const legacyConfig = createDefaultRoomConfig(GAME_MODE_TWO_PLAYER);
+  legacyConfig.playerUserMap.player1 = room?.host_user_id || null;
+  legacyConfig.playerUserMap.player2 = room?.guest_user_id || null;
+
+  const fallback = {
+    game: createInitialGameState(),
+    config: legacyConfig,
+  };
+
+  if (rawGameState === null || rawGameState === undefined || rawGameState === "") {
+    return fallback;
+  }
+
+  let parsed = rawGameState;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (_error) {
+      try {
+        return {
+          game: deserializeGameState(rawGameState),
+          config: legacyConfig,
+        };
+      } catch (_error2) {
+        return fallback;
+      }
+    }
+  }
+
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    Object.prototype.hasOwnProperty.call(parsed, "engineState")
+  ) {
+    const mode = normalizeGameMode(parsed.mode);
+    const config = {
+      mode,
+      colorOwner: normalizeColorOwner(parsed.colorOwner, mode),
+      playerUserMap: normalizePlayerUserMap(parsed.playerUserMap, mode),
+    };
+
+    try {
+      return {
+        game: deserializeGameState(parsed.engineState),
+        config,
+      };
+    } catch (_error) {
+      return {
+        game: createInitialGameState(),
+        config,
+      };
+    }
+  }
+
+  try {
+    return {
+      game: deserializeGameState(parsed),
+      config: legacyConfig,
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
 function getRoleByRoom(room, userId) {
   if (!room || !userId) {
     return "none";
   }
 
-  if (room.host_user_id === userId) {
-    return "host";
+  const parsed = parseRoomGameState(room.game_state, room);
+  const seats = getPlayerSeatsByMode(parsed.config.mode);
+  for (const seat of seats) {
+    if (parsed.config.playerUserMap[seat] === userId) {
+      return seat;
+    }
   }
-
-  if (room.guest_user_id === userId) {
-    return "guest";
-  }
-
   return "spectator";
 }
 
+function getRoleByRoomConfig(config, userId) {
+  if (!userId) {
+    return "none";
+  }
+  const seats = getPlayerSeatsByMode(config.mode);
+  for (const seat of seats) {
+    if (config.playerUserMap[seat] === userId) {
+      return seat;
+    }
+  }
+  return "spectator";
+}
+
+function getJoinedSeatCount(config) {
+  return getPlayerSeatsByMode(config.mode).filter((seat) => Boolean(config.playerUserMap[seat])).length;
+}
+
+function getExpectedRoomStatusByConfig(game, config) {
+  if (game.gameOver) {
+    return "finished";
+  }
+
+  const required = getPlayerSeatsByMode(config.mode).length;
+  const joined = getJoinedSeatCount(config);
+  return joined >= required ? "playing" : "waiting";
+}
+
 function canClientUseColor(color) {
-  const available = ROLE_COLORS[state.network.role] || [];
-  return available.includes(color);
+  const role = state.network.role;
+  if (!/^player[1-4]$/.test(role)) {
+    return false;
+  }
+  return state.roomConfig.colorOwner[color] === role;
 }
 
 function getEffectiveRoomStatus() {
@@ -224,6 +422,11 @@ function getEffectiveRoomStatus() {
   }
 
   return status || "waiting";
+}
+
+function getWaitingSeats() {
+  const seats = getPlayerSeatsByMode(state.roomConfig.mode);
+  return seats.filter((seat) => !state.roomConfig.playerUserMap[seat]);
 }
 
 function getCannotOperateReason() {
@@ -241,7 +444,7 @@ function getCannotOperateReason() {
 
   const roomStatus = getEffectiveRoomStatus();
   if (roomStatus === "waiting") {
-    return "等待另一位玩家加入";
+    return "等待玩家加入";
   }
 
   if (roomStatus === "finished" || state.game.gameOver) {
@@ -853,14 +1056,14 @@ function updateRoomCardUI() {
 
   if (!roomId || !room) {
     state.dom.ui.roomCode.textContent = "房间号：未加入";
-    state.dom.ui.roomRole.textContent = `我的身份：${ROLE_LABEL.none}`;
+    state.dom.ui.roomRole.textContent = `我的身份：${getSeatLabel("none")}`;
     state.dom.ui.roomStatus.textContent = "房间状态：未连接";
     state.dom.ui.roomCanAct.textContent = "当前是否轮到我：否";
 
     if (!state.network.ready) {
       state.dom.ui.roomHint.textContent = "联机服务未就绪，可点击“创建房间”重试";
     } else {
-      state.dom.ui.roomHint.textContent = "无 room 参数时请先创建房间";
+      state.dom.ui.roomHint.textContent = "无 room 参数时请先创建房间（?mode=4 可开4人房）";
     }
 
     state.dom.buttons.createRoom.disabled = state.network.creatingRoom;
@@ -869,17 +1072,18 @@ function updateRoomCardUI() {
   }
 
   state.dom.ui.roomCode.textContent = `房间号：${room.id}`;
-  state.dom.ui.roomRole.textContent = `我的身份：${ROLE_LABEL[role] || ROLE_LABEL.none}`;
-  state.dom.ui.roomStatus.textContent = `房间状态：${ROOM_STATUS_LABEL[roomStatus] || roomStatus}`;
+  state.dom.ui.roomRole.textContent = `我的身份：${getSeatLabel(role)}`;
+  state.dom.ui.roomStatus.textContent = `房间状态：${ROOM_STATUS_LABEL[roomStatus] || roomStatus}（${
+    state.roomConfig.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式"
+  }）`;
   state.dom.ui.roomCanAct.textContent = `当前是否轮到我：${canAct ? "是" : "否"}`;
 
   if (roomStatus === "waiting") {
-    if (role === "host") {
-      state.dom.ui.roomHint.textContent = "等待玩家2通过链接加入";
-    } else if (role === "guest") {
-      state.dom.ui.roomHint.textContent = "已加入房间，等待房间进入对局状态";
+    const waitingSeats = getWaitingSeats();
+    if (waitingSeats.length > 0) {
+      state.dom.ui.roomHint.textContent = `等待${waitingSeats.map((seat) => getSeatLabel(seat)).join("、")}加入`;
     } else {
-      state.dom.ui.roomHint.textContent = "该房间正在等待玩家加入";
+      state.dom.ui.roomHint.textContent = "玩家已就绪，等待房间开始";
     }
   } else if (roomStatus === "playing") {
     if (canAct) {
@@ -900,7 +1104,7 @@ function updateTurnUI() {
   const turnPlayer = getPlayerByColor(turnColor);
   const scores = state.game.scores || calculateScores(state.game);
 
-  state.dom.ui.turnPlayer.textContent = `${PLAYER_CONFIG[turnPlayer].name}（${COLOR_LABEL[turnColor]}色）`;
+  state.dom.ui.turnPlayer.textContent = `玩家${turnPlayer}（${COLOR_LABEL[turnColor]}色）`;
   state.dom.ui.turnNumber.textContent = `第 ${state.game.turnCount} 手`;
   state.dom.ui.turnColors.textContent = `当前颜色：${COLOR_LABEL[turnColor]}`;
 
@@ -1278,7 +1482,7 @@ async function placePiece() {
 
   try {
     const payload = {
-      game_state: serializeGameState(localResult.state),
+      game_state: serializeRoomGameState(localResult.state, state.roomConfig),
       current_turn_color: localResult.state.currentTurnColor,
       status: localResult.state.gameOver ? "finished" : "playing",
       winner: localResult.state.winner,
@@ -1546,13 +1750,10 @@ function applyRoomSnapshot(room, options = {}) {
   state.network.room = room;
   state.network.roomId = room.id;
   state.network.lastRoomUpdatedAt = room.updated_at || null;
+  const parsedRoomState = parseRoomGameState(room.game_state, room);
+  state.roomConfig = parsedRoomState.config;
+  state.game = parsedRoomState.game;
   state.network.role = getRoleByRoom(room, state.network.userId);
-
-  try {
-    state.game = deserializeGameState(room.game_state);
-  } catch (_error) {
-    state.game = createInitialGameState();
-  }
 
   clearTransientSelection();
   state.lastScrolledTurnColor = null;
@@ -1614,6 +1815,81 @@ async function ensureNetworkReady() {
   }
 }
 
+async function claimSeatAndMaybeUpdateRoom(room) {
+  const parsed = parseRoomGameState(room.game_state, room);
+  const config = {
+    mode: parsed.config.mode,
+    colorOwner: { ...parsed.config.colorOwner },
+    playerUserMap: { ...parsed.config.playerUserMap },
+  };
+  const seats = getPlayerSeatsByMode(config.mode);
+
+  let role = getRoleByRoomConfig(config, state.network.userId);
+  let changed = false;
+
+  if (role === "spectator") {
+    const emptySeat = seats.find((seat) => !config.playerUserMap[seat]);
+    if (emptySeat) {
+      config.playerUserMap[emptySeat] = state.network.userId;
+      role = emptySeat;
+      changed = true;
+    }
+  }
+
+  const expectedStatus = getExpectedRoomStatusByConfig(parsed.game, config);
+  const expectedHost = config.playerUserMap.player1 || room.host_user_id || null;
+  const expectedGuest = config.playerUserMap.player2 || room.guest_user_id || null;
+  const shouldUpdateRoom =
+    changed ||
+    room.status !== expectedStatus ||
+    room.current_turn_color !== parsed.game.currentTurnColor ||
+    room.host_user_id !== expectedHost ||
+    room.guest_user_id !== expectedGuest;
+
+  if (!shouldUpdateRoom) {
+    return {
+      room,
+      role,
+      config,
+    };
+  }
+
+  const payload = {
+    host_user_id: expectedHost,
+    guest_user_id: expectedGuest,
+    status: expectedStatus,
+    current_turn_color: parsed.game.currentTurnColor,
+    game_state: serializeRoomGameState(parsed.game, config),
+    winner: parsed.game.winner,
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    const updated = await sbUpdateRoomState(
+      state.network.client,
+      room.id,
+      payload,
+      room.updated_at || null
+    );
+    return {
+      room: updated,
+      role,
+      config,
+    };
+  } catch (_error) {
+    const latest = await sbLoadRoom(state.network.client, room.id);
+    if (!latest) {
+      throw new Error("房间不存在或已删除");
+    }
+    const latestParsed = parseRoomGameState(latest.game_state, latest);
+    return {
+      room: latest,
+      role: getRoleByRoomConfig(latestParsed.config, state.network.userId),
+      config: latestParsed.config,
+    };
+  }
+}
+
 async function createOnlineRoom() {
   if (state.network.creatingRoom) {
     return;
@@ -1634,18 +1910,26 @@ async function createOnlineRoom() {
 
   try {
     const initialGame = createInitialGameState();
+    const mode = getRequestedGameModeFromUrl();
+    const roomConfig = createDefaultRoomConfig(mode);
+    roomConfig.playerUserMap.player1 = state.network.userId;
+    const initialStatus = getExpectedRoomStatusByConfig(initialGame, roomConfig);
     const room = await sbCreateRoom(state.network.client, {
       hostUserId: state.network.userId,
-      status: "waiting",
+      status: initialStatus,
       currentTurnColor: initialGame.currentTurnColor,
-      gameState: serializeGameState(initialGame),
+      gameState: serializeRoomGameState(initialGame, roomConfig),
       winner: null,
     });
 
     setRoomIdToUrl(room.id);
     subscribeCurrentRoom(room.id);
+    const waitingSeats = getPlayerSeatsByMode(mode).slice(1).map((seat) => getSeatLabel(seat));
     applyRoomSnapshot(room, {
-      message: `房间 ${room.id} 创建成功，等待玩家2加入`,
+      message:
+        waitingSeats.length > 0
+          ? `房间 ${room.id} 创建成功，等待${waitingSeats.join("、")}加入`
+          : `房间 ${room.id} 创建成功`,
       fromRealtime: false,
     });
   } catch (error) {
@@ -1672,11 +1956,17 @@ async function joinOrLoadRoomByUrl() {
   render();
 
   try {
-    const room = await sbJoinRoom(state.network.client, roomId, state.network.userId);
-    setRoomIdToUrl(room.id);
-    subscribeCurrentRoom(room.id);
-    applyRoomSnapshot(room, {
-      message: `已进入房间 ${room.id}`,
+    const loaded = await sbLoadRoom(state.network.client, roomId);
+    if (!loaded) {
+      throw new Error("房间不存在");
+    }
+
+    const resolved = await claimSeatAndMaybeUpdateRoom(loaded);
+    setRoomIdToUrl(resolved.room.id);
+    subscribeCurrentRoom(resolved.room.id);
+    const modeLabel = resolved.config.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式";
+    applyRoomSnapshot(resolved.room, {
+      message: `已进入房间 ${resolved.room.id}（${modeLabel}，身份：${getSeatLabel(resolved.role)}）`,
       fromRealtime: false,
     });
   } catch (error) {
