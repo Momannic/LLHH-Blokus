@@ -38,6 +38,9 @@ const MAGNIFIER_MARGIN = 8;
 const GAME_MODE_TWO_PLAYER = "2p";
 const GAME_MODE_FOUR_PLAYER = "4p";
 const ROOM_GAME_STATE_VERSION = 2;
+const LOBBY_ACTION_NONE = "none";
+const LOBBY_ACTION_CREATE = "create";
+const LOBBY_ACTION_JOIN = "join";
 
 const COLOR_OWNER_BY_MODE = {
   [GAME_MODE_TWO_PLAYER]: {
@@ -68,7 +71,9 @@ const CORNER_BY_COLOR = {
 };
 
 function normalizeGameMode(mode) {
-  return mode === GAME_MODE_FOUR_PLAYER ? GAME_MODE_FOUR_PLAYER : GAME_MODE_TWO_PLAYER;
+  return mode === 4 || mode === "4" || mode === GAME_MODE_FOUR_PLAYER
+    ? GAME_MODE_FOUR_PLAYER
+    : GAME_MODE_TWO_PLAYER;
 }
 
 function getPlayerSeatsByMode(mode) {
@@ -106,6 +111,14 @@ function createEmptyPlayerUserMap(mode) {
   return output;
 }
 
+function createDefaultPlayerNicknameMap(mode) {
+  const output = {};
+  getPlayerSeatsByMode(mode).forEach((seat, index) => {
+    output[seat] = `玩家${index + 1}`;
+  });
+  return output;
+}
+
 function normalizePlayerUserMap(map, mode) {
   const output = createEmptyPlayerUserMap(mode);
   if (!map || typeof map !== "object") {
@@ -115,6 +128,19 @@ function normalizePlayerUserMap(map, mode) {
   Object.keys(output).forEach((seat) => {
     const value = map[seat];
     output[seat] = typeof value === "string" && value ? value : null;
+  });
+  return output;
+}
+
+function normalizePlayerNicknameMap(map, mode) {
+  const output = createDefaultPlayerNicknameMap(mode);
+  if (!map || typeof map !== "object") {
+    return output;
+  }
+
+  Object.keys(output).forEach((seat) => {
+    const value = map[seat];
+    output[seat] = typeof value === "string" && value.trim() ? value.trim() : output[seat];
   });
   return output;
 }
@@ -142,12 +168,20 @@ function createDefaultRoomConfig(mode) {
     mode: normalizedMode,
     colorOwner: createDefaultColorOwner(normalizedMode),
     playerUserMap: createEmptyPlayerUserMap(normalizedMode),
+    playerNicknameMap: createDefaultPlayerNicknameMap(normalizedMode),
   };
 }
 
 const state = {
+  view: "lobby",
   game: createInitialGameState(),
   roomConfig: createDefaultRoomConfig(GAME_MODE_TWO_PLAYER),
+  lobby: {
+    mode: GAME_MODE_TWO_PLAYER,
+    nickname: "",
+    action: LOBBY_ACTION_NONE,
+    status: "请填写昵称，选择模式后创建或加入房间",
+  },
   selectedPieceId: null,
   selectedRotation: 0,
   selectedFlipped: false,
@@ -191,6 +225,9 @@ const state = {
     unsubscribeRoom: null,
   },
   dom: {
+    lobbyView: null,
+    gameView: null,
+    lobby: {},
     board: null,
     boardArea: null,
     piecePool: null,
@@ -225,7 +262,8 @@ function getPlayerByColor(color) {
 }
 
 function getPlayerNameByColor(color) {
-  return `玩家${getPlayerByColor(color)}`;
+  const seat = state.roomConfig.colorOwner[color];
+  return state.roomConfig.playerNicknameMap?.[seat] || `玩家${getPlayerByColor(color)}`;
 }
 
 function getPieceById(pieceId) {
@@ -273,25 +311,41 @@ function getRoomLink(roomId) {
   return url.toString();
 }
 
-function getRequestedGameModeFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const mode = (params.get("mode") || "").trim();
-  const players = (params.get("players") || "").trim();
+function normalizeRoomCode(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
 
-  if (mode === "4" || mode === GAME_MODE_FOUR_PLAYER || players === "4") {
-    return GAME_MODE_FOUR_PLAYER;
+function getDefaultNicknameBySeat(seat) {
+  const match = typeof seat === "string" ? seat.match(/^player([1-4])$/) : null;
+  const index = match ? Number(match[1]) : 1;
+  return `玩家${index}`;
+}
+
+function getLobbyNicknameInputValue() {
+  const fromState = String(state.lobby.nickname || "").trim();
+  if (fromState) {
+    return fromState;
   }
-
-  return GAME_MODE_TWO_PLAYER;
+  if (state.dom.lobby.nicknameInput) {
+    const fromInput = String(state.dom.lobby.nicknameInput.value || "").trim();
+    if (fromInput) {
+      return fromInput;
+    }
+  }
+  return "";
 }
 
 function serializeRoomGameState(gameState, roomConfig) {
   const safeConfig = roomConfig || createDefaultRoomConfig(GAME_MODE_TWO_PLAYER);
   return JSON.stringify({
     version: ROOM_GAME_STATE_VERSION,
-    mode: normalizeGameMode(safeConfig.mode),
+    mode: normalizeGameMode(safeConfig.mode) === GAME_MODE_FOUR_PLAYER ? 4 : 2,
     colorOwner: normalizeColorOwner(safeConfig.colorOwner, safeConfig.mode),
     playerUserMap: normalizePlayerUserMap(safeConfig.playerUserMap, safeConfig.mode),
+    playerNicknameMap: normalizePlayerNicknameMap(safeConfig.playerNicknameMap, safeConfig.mode),
     engineState: serializeGameState(gameState),
   });
 }
@@ -336,6 +390,7 @@ function parseRoomGameState(rawGameState, room) {
       mode,
       colorOwner: normalizeColorOwner(parsed.colorOwner, mode),
       playerUserMap: normalizePlayerUserMap(parsed.playerUserMap, mode),
+      playerNicknameMap: normalizePlayerNicknameMap(parsed.playerNicknameMap, mode),
     };
 
     try {
@@ -460,6 +515,67 @@ function getCannotOperateReason() {
 
 function canCurrentClientOperate() {
   return getCannotOperateReason() === "";
+}
+
+function setView(view) {
+  state.view = view === "game" ? "game" : "lobby";
+}
+
+function setLobbyAction(action) {
+  if (action !== LOBBY_ACTION_CREATE && action !== LOBBY_ACTION_JOIN) {
+    state.lobby.action = LOBBY_ACTION_NONE;
+    return;
+  }
+  state.lobby.action = state.lobby.action === action ? LOBBY_ACTION_NONE : action;
+}
+
+function setLobbyMode(mode) {
+  state.lobby.mode = normalizeGameMode(mode);
+}
+
+function updateLobbyStatus(message) {
+  if (typeof message === "string" && message) {
+    state.lobby.status = message;
+  }
+}
+
+function renderLobby() {
+  const lobbyView = state.dom.lobbyView;
+  const gameView = state.dom.gameView;
+  if (!lobbyView || !gameView) {
+    return;
+  }
+
+  const inLobby = state.view === "lobby";
+  lobbyView.hidden = !inLobby;
+  gameView.hidden = inLobby;
+
+  const lobby = state.dom.lobby;
+  if (!lobby.mode2Btn) {
+    return;
+  }
+
+  lobby.mode2Btn.classList.toggle("is-active", state.lobby.mode === GAME_MODE_TWO_PLAYER);
+  lobby.mode4Btn.classList.toggle("is-active", state.lobby.mode === GAME_MODE_FOUR_PLAYER);
+
+  const isCreateOpen = state.lobby.action === LOBBY_ACTION_CREATE;
+  const isJoinOpen = state.lobby.action === LOBBY_ACTION_JOIN;
+
+  lobby.createPanel.hidden = !isCreateOpen;
+  lobby.joinPanel.hidden = !isJoinOpen;
+  lobby.createToggleBtn.classList.toggle("is-open", isCreateOpen);
+  lobby.joinToggleBtn.classList.toggle("is-open", isJoinOpen);
+
+  lobby.createToggleBtn.textContent = isCreateOpen ? "取消创建" : "创建房间";
+  lobby.joinToggleBtn.textContent = isJoinOpen ? "取消加入" : "加入房间";
+
+  if (lobby.nicknameInput && lobby.nicknameInput.value !== state.lobby.nickname) {
+    lobby.nicknameInput.value = state.lobby.nickname;
+  }
+
+  if (lobby.statusText) {
+    lobby.statusText.textContent = state.lobby.status;
+  }
 }
 
 function syncSerializedState() {
@@ -1063,7 +1179,7 @@ function updateRoomCardUI() {
     if (!state.network.ready) {
       state.dom.ui.roomHint.textContent = "联机服务未就绪，可点击“创建房间”重试";
     } else {
-      state.dom.ui.roomHint.textContent = "无 room 参数时请先创建房间（?mode=4 可开4人房）";
+      state.dom.ui.roomHint.textContent = "请先在大厅中创建或加入房间";
     }
 
     state.dom.buttons.createRoom.disabled = state.network.creatingRoom;
@@ -1072,7 +1188,10 @@ function updateRoomCardUI() {
   }
 
   state.dom.ui.roomCode.textContent = `房间号：${room.id}`;
-  state.dom.ui.roomRole.textContent = `我的身份：${getSeatLabel(role)}`;
+  const roleName = /^player[1-4]$/.test(role)
+    ? `${getSeatLabel(role)}（${state.roomConfig.playerNicknameMap?.[role] || getDefaultNicknameBySeat(role)}）`
+    : getSeatLabel(role);
+  state.dom.ui.roomRole.textContent = `我的身份：${roleName}`;
   state.dom.ui.roomStatus.textContent = `房间状态：${ROOM_STATUS_LABEL[roomStatus] || roomStatus}（${
     state.roomConfig.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式"
   }）`;
@@ -1101,10 +1220,10 @@ function updateRoomCardUI() {
 
 function updateTurnUI() {
   const turnColor = getCurrentTurnColor();
-  const turnPlayer = getPlayerByColor(turnColor);
+  const turnPlayerName = getPlayerNameByColor(turnColor);
   const scores = state.game.scores || calculateScores(state.game);
 
-  state.dom.ui.turnPlayer.textContent = `玩家${turnPlayer}（${COLOR_LABEL[turnColor]}色）`;
+  state.dom.ui.turnPlayer.textContent = `${turnPlayerName}（${COLOR_LABEL[turnColor]}色）`;
   state.dom.ui.turnNumber.textContent = `第 ${state.game.turnCount} 手`;
   state.dom.ui.turnColors.textContent = `当前颜色：${COLOR_LABEL[turnColor]}`;
 
@@ -1168,6 +1287,10 @@ function renderControls() {
 }
 
 function render() {
+  renderLobby();
+  if (state.view !== "game") {
+    return;
+  }
   renderPiecePool();
   maybeAutoScrollCurrentTurnSection();
   renderBoard();
@@ -1690,6 +1813,11 @@ function updateLayout() {
 
   const viewportW = window.innerWidth;
   const viewportH = window.innerHeight;
+  if (state.view !== "game") {
+    document.body.classList.remove("portrait");
+    return;
+  }
+
   document.body.classList.toggle("portrait", viewportW < viewportH);
 
   if (!app || !shell || !controls) {
@@ -1752,8 +1880,14 @@ function applyRoomSnapshot(room, options = {}) {
   state.network.lastRoomUpdatedAt = room.updated_at || null;
   const parsedRoomState = parseRoomGameState(room.game_state, room);
   state.roomConfig = parsedRoomState.config;
+  state.lobby.mode = parsedRoomState.config.mode;
   state.game = parsedRoomState.game;
   state.network.role = getRoleByRoom(room, state.network.userId);
+  if (/^player[1-4]$/.test(state.network.role)) {
+    state.lobby.nickname =
+      parsedRoomState.config.playerNicknameMap[state.network.role] ||
+      getDefaultNicknameBySeat(state.network.role);
+  }
 
   clearTransientSelection();
   state.lastScrolledTurnColor = null;
@@ -1764,6 +1898,8 @@ function applyRoomSnapshot(room, options = {}) {
     state.message = buildRealtimeSyncMessage(room);
   }
 
+  setView("game");
+  updateLayout();
   render();
 }
 
@@ -1815,23 +1951,32 @@ async function ensureNetworkReady() {
   }
 }
 
-async function claimSeatAndMaybeUpdateRoom(room) {
+async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
   const parsed = parseRoomGameState(room.game_state, room);
   const config = {
     mode: parsed.config.mode,
     colorOwner: { ...parsed.config.colorOwner },
     playerUserMap: { ...parsed.config.playerUserMap },
+    playerNicknameMap: { ...parsed.config.playerNicknameMap },
   };
   const seats = getPlayerSeatsByMode(config.mode);
 
   let role = getRoleByRoomConfig(config, state.network.userId);
   let changed = false;
+  const nickname = String(preferredNickname || "").trim();
 
   if (role === "spectator") {
     const emptySeat = seats.find((seat) => !config.playerUserMap[seat]);
     if (emptySeat) {
       config.playerUserMap[emptySeat] = state.network.userId;
+      config.playerNicknameMap[emptySeat] = nickname || getDefaultNicknameBySeat(emptySeat);
       role = emptySeat;
+      changed = true;
+    }
+  } else if (/^player[1-4]$/.test(role)) {
+    const nextNickname = nickname || config.playerNicknameMap[role] || getDefaultNicknameBySeat(role);
+    if (config.playerNicknameMap[role] !== nextNickname) {
+      config.playerNicknameMap[role] = nextNickname;
       changed = true;
     }
   }
@@ -1890,19 +2035,34 @@ async function claimSeatAndMaybeUpdateRoom(room) {
   }
 }
 
-async function createOnlineRoom() {
+async function createOnlineRoom(options = {}) {
+  const mode = normalizeGameMode(options.mode || state.lobby.mode);
+  const roomCode = normalizeRoomCode(options.roomCode);
+  const nickname = String(
+    options.nickname !== undefined ? options.nickname : getLobbyNicknameInputValue()
+  ).trim();
+
+  if (!roomCode) {
+    updateLobbyStatus("创建失败：房间码不能为空");
+    render();
+    return false;
+  }
+
   if (state.network.creatingRoom) {
-    return;
+    return false;
   }
 
   if (!(await ensureNetworkReady())) {
-    return;
+    updateLobbyStatus(state.message);
+    render();
+    return false;
   }
 
   if (state.network.roomId) {
     state.message = "当前已在房间中，若要新开房请使用新页面";
+    updateLobbyStatus(state.message);
     render();
-    return;
+    return false;
   }
 
   state.network.creatingRoom = true;
@@ -1910,11 +2070,12 @@ async function createOnlineRoom() {
 
   try {
     const initialGame = createInitialGameState();
-    const mode = getRequestedGameModeFromUrl();
     const roomConfig = createDefaultRoomConfig(mode);
     roomConfig.playerUserMap.player1 = state.network.userId;
+    roomConfig.playerNicknameMap.player1 = nickname || getDefaultNicknameBySeat("player1");
     const initialStatus = getExpectedRoomStatusByConfig(initialGame, roomConfig);
     const room = await sbCreateRoom(state.network.client, {
+      roomId: roomCode,
       hostUserId: state.network.userId,
       status: initialStatus,
       currentTurnColor: initialGame.currentTurnColor,
@@ -1932,24 +2093,35 @@ async function createOnlineRoom() {
           : `房间 ${room.id} 创建成功`,
       fromRealtime: false,
     });
+    updateLobbyStatus(`房间 ${room.id} 创建成功`);
+    return true;
   } catch (error) {
     state.message = `创建房间失败：${error.message || String(error)}`;
+    updateLobbyStatus(state.message);
     render();
+    return false;
   } finally {
     state.network.creatingRoom = false;
     render();
   }
 }
 
-async function joinOrLoadRoomByUrl() {
-  const roomId = getRoomIdFromUrl();
+async function joinRoomByCode(roomIdInput, nicknameInput) {
+  const roomId = normalizeRoomCode(roomIdInput);
+  const nickname = String(
+    nicknameInput !== undefined ? nicknameInput : getLobbyNicknameInputValue()
+  ).trim();
+
   if (!roomId) {
+    updateLobbyStatus("加入失败：房间码不能为空");
     render();
-    return;
+    return false;
   }
 
   if (!(await ensureNetworkReady())) {
-    return;
+    updateLobbyStatus(state.message);
+    render();
+    return false;
   }
 
   state.network.initializing = true;
@@ -1961,7 +2133,7 @@ async function joinOrLoadRoomByUrl() {
       throw new Error("房间不存在");
     }
 
-    const resolved = await claimSeatAndMaybeUpdateRoom(loaded);
+    const resolved = await claimSeatAndMaybeUpdateRoom(loaded, nickname);
     setRoomIdToUrl(resolved.room.id);
     subscribeCurrentRoom(resolved.room.id);
     const modeLabel = resolved.config.mode === GAME_MODE_FOUR_PLAYER ? "4人模式" : "2人模式";
@@ -1969,9 +2141,13 @@ async function joinOrLoadRoomByUrl() {
       message: `已进入房间 ${resolved.room.id}（${modeLabel}，身份：${getSeatLabel(resolved.role)}）`,
       fromRealtime: false,
     });
+    updateLobbyStatus(`加入成功：${resolved.room.id}`);
+    return true;
   } catch (error) {
     state.message = `加入房间失败：${error.message || String(error)}`;
+    updateLobbyStatus(state.message);
     render();
+    return false;
   } finally {
     state.network.initializing = false;
     render();
@@ -2003,6 +2179,47 @@ async function copyRoomLink() {
   render();
 }
 
+function handleLobbyModeChange(mode) {
+  setLobbyMode(mode);
+  render();
+}
+
+function handleLobbyNicknameInput(event) {
+  state.lobby.nickname = String(event.target.value || "").trim();
+}
+
+function openLobbyCreatePanel() {
+  setLobbyAction(LOBBY_ACTION_CREATE);
+  render();
+}
+
+function openLobbyJoinPanel() {
+  setLobbyAction(LOBBY_ACTION_JOIN);
+  render();
+}
+
+async function handleLobbyCreateConfirm() {
+  const roomCode = state.dom.lobby.createRoomCodeInput?.value || "";
+  const ok = await createOnlineRoom({
+    roomCode,
+    mode: state.lobby.mode,
+    nickname: getLobbyNicknameInputValue(),
+  });
+  if (ok) {
+    setLobbyAction(LOBBY_ACTION_NONE);
+    render();
+  }
+}
+
+async function handleLobbyJoinConfirm() {
+  const roomCode = state.dom.lobby.joinRoomCodeInput?.value || "";
+  const ok = await joinRoomByCode(roomCode, getLobbyNicknameInputValue());
+  if (ok) {
+    setLobbyAction(LOBBY_ACTION_NONE);
+    render();
+  }
+}
+
 function bindEvents() {
   state.dom.piecePool.addEventListener("click", handlePiecePoolClick);
   state.dom.piecePool.addEventListener("pointerdown", handlePiecePoolPointerDown);
@@ -2021,19 +2238,60 @@ function bindEvents() {
   state.dom.buttons.cancel.addEventListener("click", () => {
     clearSelection("已取消当前选择");
   });
-  state.dom.buttons.createRoom.addEventListener("click", createOnlineRoom);
+  state.dom.buttons.createRoom.addEventListener("click", () => {
+    setView("lobby");
+    setLobbyAction(LOBBY_ACTION_CREATE);
+    render();
+  });
   state.dom.buttons.copyRoomLink.addEventListener("click", copyRoomLink);
+
+  if (state.dom.lobby.nicknameInput) {
+    state.dom.lobby.nicknameInput.addEventListener("input", handleLobbyNicknameInput);
+  }
+  state.dom.lobby.mode2Btn?.addEventListener("click", () => handleLobbyModeChange(GAME_MODE_TWO_PLAYER));
+  state.dom.lobby.mode4Btn?.addEventListener("click", () => handleLobbyModeChange(GAME_MODE_FOUR_PLAYER));
+  state.dom.lobby.createToggleBtn?.addEventListener("click", openLobbyCreatePanel);
+  state.dom.lobby.joinToggleBtn?.addEventListener("click", openLobbyJoinPanel);
+  state.dom.lobby.createBackBtn?.addEventListener("click", () => {
+    setLobbyAction(LOBBY_ACTION_NONE);
+    render();
+  });
+  state.dom.lobby.joinBackBtn?.addEventListener("click", () => {
+    setLobbyAction(LOBBY_ACTION_NONE);
+    render();
+  });
+  state.dom.lobby.createConfirmBtn?.addEventListener("click", handleLobbyCreateConfirm);
+  state.dom.lobby.joinConfirmBtn?.addEventListener("click", handleLobbyJoinConfirm);
 
   window.addEventListener("resize", updateLayout);
   window.addEventListener("orientationchange", updateLayout);
 }
 
 function cacheDom() {
+  state.dom.lobbyView = document.getElementById("lobbyView");
+  state.dom.gameView = document.getElementById("gameView");
   state.dom.board = document.getElementById("board");
   state.dom.boardArea = document.querySelector(".board-area");
   state.dom.piecePool = document.getElementById("piecePool");
   state.dom.floatingPiece = document.getElementById("floatingPiece");
   state.dom.floatingPieceGrid = document.getElementById("floatingPieceGrid");
+
+  state.dom.lobby = {
+    nicknameInput: document.getElementById("lobbyNicknameInput"),
+    mode2Btn: document.getElementById("lobbyMode2Btn"),
+    mode4Btn: document.getElementById("lobbyMode4Btn"),
+    createToggleBtn: document.getElementById("lobbyCreateToggleBtn"),
+    joinToggleBtn: document.getElementById("lobbyJoinToggleBtn"),
+    createPanel: document.getElementById("lobbyCreatePanel"),
+    joinPanel: document.getElementById("lobbyJoinPanel"),
+    createRoomCodeInput: document.getElementById("lobbyCreateRoomCodeInput"),
+    joinRoomCodeInput: document.getElementById("lobbyJoinRoomCodeInput"),
+    createBackBtn: document.getElementById("lobbyCreateBackBtn"),
+    joinBackBtn: document.getElementById("lobbyJoinBackBtn"),
+    createConfirmBtn: document.getElementById("lobbyCreateConfirmBtn"),
+    joinConfirmBtn: document.getElementById("lobbyJoinConfirmBtn"),
+    statusText: document.getElementById("lobbyStatusText"),
+  };
 
   state.dom.buttons = {
     rotate: document.getElementById("btnRotate"),
@@ -2109,13 +2367,17 @@ async function init() {
   createPiecePool();
   bindEvents();
   registerStateLayerApi();
+  setView("lobby");
   updateLayout();
+  const presetRoom = getRoomIdFromUrl();
+  if (presetRoom && state.dom.lobby.joinRoomCodeInput) {
+    state.dom.lobby.joinRoomCodeInput.value = presetRoom;
+    state.lobby.action = LOBBY_ACTION_JOIN;
+    updateLobbyStatus("已从链接读取房间码，请点击“确认加入”");
+  }
   render();
 
-  await joinOrLoadRoomByUrl();
-  if (!state.network.roomId) {
-    await ensureNetworkReady();
-  }
+  await ensureNetworkReady();
 }
 
 init();

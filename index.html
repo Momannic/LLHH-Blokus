@@ -14,126 +14,204 @@
     <meta property="og:site_name" content="来来回回Blokus" />
     <meta property="og:type" content="website" />
     <meta property="og:description" content="来来回回Blokus - 在线联机方块棋" />
-    <link rel="stylesheet" href="style.css?v=20260309g" />
+    <link rel="stylesheet" href="style.css?v=20260309h" />
   </head>
   <body>
-    <div class="app" id="app">
-      <div class="rotate-hint" id="rotateHint">
-        <div class="rotate-card">
-          <h1>请横屏体验</h1>
-          <p>Blokus UI 已针对手机横屏布局优化</p>
+    <section id="lobbyView" class="lobby-view">
+      <div class="lobby-shell">
+        <div class="lobby-hero">
+          <div class="hero-piece pink p1">
+            <i></i><i></i><i></i><i></i>
+          </div>
+          <div class="hero-piece cyan p2">
+            <i></i><i></i><i></i><i></i>
+          </div>
+          <div class="hero-piece yellow p3">
+            <i></i><i></i><i></i><i></i>
+          </div>
+          <div class="hero-piece mint p4">
+            <i></i><i></i><i></i><i></i>
+          </div>
+          <h1>来来回回 Blokus</h1>
+          <div class="hero-dots" aria-hidden="true">
+            <i></i><i></i><i></i><i></i>
+          </div>
         </div>
-      </div>
 
-      <section class="main-shell">
-        <aside class="panel left-panel">
-          <header class="panel-header">
-            <h2>拼块池</h2>
-            <p id="piecePoolHint">当前回合拼块</p>
-          </header>
+        <div class="lobby-card">
+          <label class="lobby-field">
+            <span>昵称</span>
+            <input id="lobbyNicknameInput" type="text" maxlength="16" placeholder="请输入你的昵称" />
+          </label>
 
-          <div class="piece-pool" id="piecePool"></div>
-        </aside>
-
-        <main class="board-area" aria-label="20x20棋盘区域">
-          <div class="board-frame">
-            <div id="board" class="board" role="grid" aria-label="Blokus 20x20 board"></div>
-          </div>
-          <div class="floating-piece" id="floatingPiece" aria-hidden="true">
-            <div id="floatingPieceGrid" class="magnifier-grid"></div>
-          </div>
-        </main>
-
-        <aside class="panel right-panel">
-          <header class="panel-header">
-            <h2>信息面板</h2>
-            <p>占位数据</p>
-          </header>
-
-          <section class="info-card room-card" id="roomCard">
-            <h3>在线房间</h3>
-            <p id="roomCode">房间号：未加入</p>
-            <p id="roomRole">我的身份：未加入</p>
-            <p id="roomStatus">房间状态：未连接</p>
-            <p id="roomCanAct">当前是否轮到我：否</p>
-            <p id="roomHint">无 room 参数时请先创建房间</p>
-            <div class="room-actions">
-              <button id="btnCreateRoom" type="button">创建房间</button>
-              <button id="btnCopyRoomLink" type="button">复制房间链接</button>
+          <div class="lobby-mode">
+            <h2>选择游戏人数</h2>
+            <div class="mode-segment">
+              <button id="lobbyMode2Btn" class="mode-btn is-active" type="button">2人对战</button>
+              <button id="lobbyMode4Btn" class="mode-btn" type="button">4人对战</button>
             </div>
-          </section>
+          </div>
 
-          <section class="info-card" id="turnCard">
-            <h3>当前回合</h3>
-            <p id="turnPlayer">玩家1</p>
-            <p id="turnNumber">第 1 手</p>
-            <p id="turnColors">当前颜色：蓝</p>
-          </section>
+          <button id="lobbyCreateToggleBtn" class="lobby-btn create" type="button">创建房间</button>
+          <div id="lobbyCreatePanel" class="lobby-expand" hidden>
+            <h3>房间码</h3>
+            <input
+              id="lobbyCreateRoomCodeInput"
+              type="text"
+              maxlength="16"
+              placeholder="请输入房间码"
+              autocomplete="off"
+              autocapitalize="characters"
+            />
+            <div class="lobby-expand-actions">
+              <button id="lobbyCreateBackBtn" class="lobby-btn back" type="button">返回</button>
+              <button id="lobbyCreateConfirmBtn" class="lobby-btn confirm join" type="button">确认创建</button>
+            </div>
+          </div>
 
-          <section class="info-card" id="selectedCard">
-            <h3>当前选择</h3>
-            <p id="selectedPiece">拼块：无</p>
-            <p id="selectedColor">颜色：无</p>
-            <p id="selectedRotation">旋转：0°</p>
-            <p id="selectedFlip">翻转：否</p>
-          </section>
+          <button id="lobbyJoinToggleBtn" class="lobby-btn join" type="button">加入房间</button>
+          <div id="lobbyJoinPanel" class="lobby-expand" hidden>
+            <h3>房间码</h3>
+            <input
+              id="lobbyJoinRoomCodeInput"
+              type="text"
+              maxlength="16"
+              placeholder="请输入房间码"
+              autocomplete="off"
+              autocapitalize="characters"
+            />
+            <div class="lobby-expand-actions">
+              <button id="lobbyJoinBackBtn" class="lobby-btn back" type="button">返回</button>
+              <button id="lobbyJoinConfirmBtn" class="lobby-btn confirm join" type="button">确认加入</button>
+            </div>
+          </div>
 
-          <section class="info-card" id="remainCard">
-            <h3>颜色统计</h3>
-            <ul>
-              <li>
-                <span class="dot blue"></span> 蓝：块<span id="remainBlue">0</span>
-                / 已放格<span id="placedBlue">0</span>
-                / 剩余格<span id="cellsRemainBlue">0</span>
-              </li>
-              <li>
-                <span class="dot red"></span> 红：块<span id="remainRed">0</span>
-                / 已放格<span id="placedRed">0</span>
-                / 剩余格<span id="cellsRemainRed">0</span>
-              </li>
-              <li>
-                <span class="dot yellow"></span> 黄：块<span id="remainYellow">0</span>
-                / 已放格<span id="placedYellow">0</span>
-                / 剩余格<span id="cellsRemainYellow">0</span>
-              </li>
-              <li>
-                <span class="dot green"></span> 绿：块<span id="remainGreen">0</span>
-                / 已放格<span id="placedGreen">0</span>
-                / 剩余格<span id="cellsRemainGreen">0</span>
-              </li>
-            </ul>
-          </section>
+          <p id="lobbyStatusText" class="lobby-status">请填写昵称，选择模式后创建或加入房间</p>
+        </div>
 
-          <section class="info-card" id="playerScoreCard">
-            <h3>玩家统计</h3>
-            <p id="player1Placed">玩家1得分：0</p>
-            <p id="player1Remain">玩家1剩余格：0</p>
-            <p id="player2Placed">玩家2得分：0</p>
-            <p id="player2Remain">玩家2剩余格：0</p>
-          </section>
+        <p class="lobby-foot">进入游戏后请横屏手机体验</p>
+      </div>
+    </section>
 
-          <section class="info-card" id="resultCard">
-            <h3>结算</h3>
-            <p id="resultText">对局进行中</p>
-          </section>
+    <section id="gameView" class="game-view" hidden>
+      <div class="app" id="app">
+        <div class="rotate-hint" id="rotateHint">
+          <div class="rotate-card">
+            <h1>请横屏体验</h1>
+            <p>Blokus UI 已针对手机横屏布局优化</p>
+          </div>
+        </div>
 
-          <section class="info-card" id="statusCard">
-            <h3>状态</h3>
-            <p id="statusText">请选择当前轮到颜色的拼块</p>
-          </section>
-        </aside>
-      </section>
+        <section class="main-shell">
+          <aside class="panel left-panel">
+            <header class="panel-header">
+              <h2>拼块池</h2>
+              <p id="piecePoolHint">当前回合拼块</p>
+            </header>
 
-      <footer class="control-panel" aria-label="控制面板">
-        <button id="btnRotate" type="button">旋转</button>
-        <button id="btnFlip" type="button">翻转</button>
-        <button id="btnPlace" type="button" class="ok">放置</button>
-        <button id="btnCancel" type="button" class="danger">取消</button>
-      </footer>
-    </div>
+            <div class="piece-pool" id="piecePool"></div>
+          </aside>
 
-    <script src="engine.js?v=20260309g"></script>
-    <script src="supabase.js?v=20260309g"></script>
-    <script src="app.js?v=20260309g"></script>
+          <main class="board-area" aria-label="20x20棋盘区域">
+            <div class="board-frame">
+              <div id="board" class="board" role="grid" aria-label="Blokus 20x20 board"></div>
+            </div>
+            <div class="floating-piece" id="floatingPiece" aria-hidden="true">
+              <div id="floatingPieceGrid" class="magnifier-grid"></div>
+            </div>
+          </main>
+
+          <aside class="panel right-panel">
+            <header class="panel-header">
+              <h2>信息面板</h2>
+              <p>占位数据</p>
+            </header>
+
+            <section class="info-card room-card" id="roomCard">
+              <h3>在线房间</h3>
+              <p id="roomCode">房间号：未加入</p>
+              <p id="roomRole">我的身份：未加入</p>
+              <p id="roomStatus">房间状态：未连接</p>
+              <p id="roomCanAct">当前是否轮到我：否</p>
+              <p id="roomHint">请在大厅中创建/加入房间</p>
+              <div class="room-actions room-actions-only-copy">
+                <button id="btnCreateRoom" type="button">创建房间</button>
+                <button id="btnCopyRoomLink" type="button">复制房间链接</button>
+              </div>
+            </section>
+
+            <section class="info-card" id="turnCard">
+              <h3>当前回合</h3>
+              <p id="turnPlayer">玩家1</p>
+              <p id="turnNumber">第 1 手</p>
+              <p id="turnColors">当前颜色：蓝</p>
+            </section>
+
+            <section class="info-card" id="selectedCard">
+              <h3>当前选择</h3>
+              <p id="selectedPiece">拼块：无</p>
+              <p id="selectedColor">颜色：无</p>
+              <p id="selectedRotation">旋转：0°</p>
+              <p id="selectedFlip">翻转：否</p>
+            </section>
+
+            <section class="info-card" id="remainCard">
+              <h3>颜色统计</h3>
+              <ul>
+                <li>
+                  <span class="dot blue"></span> 蓝：块<span id="remainBlue">0</span>
+                  / 已放格<span id="placedBlue">0</span>
+                  / 剩余格<span id="cellsRemainBlue">0</span>
+                </li>
+                <li>
+                  <span class="dot red"></span> 红：块<span id="remainRed">0</span>
+                  / 已放格<span id="placedRed">0</span>
+                  / 剩余格<span id="cellsRemainRed">0</span>
+                </li>
+                <li>
+                  <span class="dot yellow"></span> 黄：块<span id="remainYellow">0</span>
+                  / 已放格<span id="placedYellow">0</span>
+                  / 剩余格<span id="cellsRemainYellow">0</span>
+                </li>
+                <li>
+                  <span class="dot green"></span> 绿：块<span id="remainGreen">0</span>
+                  / 已放格<span id="placedGreen">0</span>
+                  / 剩余格<span id="cellsRemainGreen">0</span>
+                </li>
+              </ul>
+            </section>
+
+            <section class="info-card" id="playerScoreCard">
+              <h3>玩家统计</h3>
+              <p id="player1Placed">玩家1得分：0</p>
+              <p id="player1Remain">玩家1剩余格：0</p>
+              <p id="player2Placed">玩家2得分：0</p>
+              <p id="player2Remain">玩家2剩余格：0</p>
+            </section>
+
+            <section class="info-card" id="resultCard">
+              <h3>结算</h3>
+              <p id="resultText">对局进行中</p>
+            </section>
+
+            <section class="info-card" id="statusCard">
+              <h3>状态</h3>
+              <p id="statusText">请选择当前轮到颜色的拼块</p>
+            </section>
+          </aside>
+        </section>
+
+        <footer class="control-panel" aria-label="控制面板">
+          <button id="btnRotate" type="button">旋转</button>
+          <button id="btnFlip" type="button">翻转</button>
+          <button id="btnPlace" type="button" class="ok">放置</button>
+          <button id="btnCancel" type="button" class="danger">取消</button>
+        </footer>
+      </div>
+    </section>
+
+    <script src="engine.js?v=20260309h"></script>
+    <script src="supabase.js?v=20260309h"></script>
+    <script src="app.js?v=20260309h"></script>
   </body>
 </html>
