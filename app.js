@@ -8,6 +8,7 @@ if (!engine) {
 const {
   BOARD_SIZE,
   SHAPES,
+  SHAPE_ORDER,
   TURN_ORDER,
   COLOR_ORDER,
   COLOR_LABEL,
@@ -900,26 +901,42 @@ function createPiecePool() {
     fragment.appendChild(section);
   });
 
-  state.game.pieces.forEach((piece) => {
-    const card = document.createElement("article");
-    card.className = "piece-card";
-    card.dataset.pieceId = piece.pieceId;
-    card.dataset.shape = piece.shape;
-    card.dataset.color = piece.color;
+  const shapeOrderMap = new Map(SHAPE_ORDER.map((shapeName, index) => [shapeName, index]));
 
-    const miniGrid = document.createElement("div");
-    miniGrid.className = "piece-grid";
-    miniGrid.setAttribute("aria-hidden", "true");
-    drawMiniShape(miniGrid, piece.shape, piece.color);
-
-    card.appendChild(miniGrid);
-
-    state.dom.pieceCards.set(piece.pieceId, card);
-    state.dom.pieceGrids.set(piece.pieceId, miniGrid);
-    const sectionGrid = state.dom.pieceSectionGrids.get(piece.color);
-    if (sectionGrid) {
-      sectionGrid.appendChild(card);
+  TURN_ORDER.forEach((color) => {
+    const sectionGrid = state.dom.pieceSectionGrids.get(color);
+    if (!sectionGrid) {
+      return;
     }
+
+    const piecesBySize = state.game.pieces
+      .filter((piece) => piece.color === color)
+      .sort((a, b) => {
+        const sizeDiff = (SHAPES[a.shape]?.length || 0) - (SHAPES[b.shape]?.length || 0);
+        if (sizeDiff !== 0) {
+          return sizeDiff;
+        }
+        return (shapeOrderMap.get(a.shape) || 0) - (shapeOrderMap.get(b.shape) || 0);
+      });
+
+    piecesBySize.forEach((piece) => {
+      const card = document.createElement("article");
+      card.className = "piece-card";
+      card.dataset.pieceId = piece.pieceId;
+      card.dataset.shape = piece.shape;
+      card.dataset.color = piece.color;
+
+      const miniGrid = document.createElement("div");
+      miniGrid.className = "piece-grid";
+      miniGrid.setAttribute("aria-hidden", "true");
+      drawMiniShape(miniGrid, piece.shape, piece.color);
+
+      card.appendChild(miniGrid);
+
+      state.dom.pieceCards.set(piece.pieceId, card);
+      state.dom.pieceGrids.set(piece.pieceId, miniGrid);
+      sectionGrid.appendChild(card);
+    });
   });
 
   pool.appendChild(fragment);
@@ -1494,7 +1511,7 @@ function renderControls() {
   }
 
   state.dom.buttons.cancel.textContent = "重选";
-  state.dom.buttons.cancel.disabled = state.game.gameOver || hasPending || (!hasSelected && !state.preview);
+  state.dom.buttons.cancel.disabled = state.game.gameOver || (!hasPending && !hasSelected && !state.preview);
 }
 
 function render() {
@@ -2110,7 +2127,7 @@ function updateLayout() {
   const appInnerWidth = Math.max(0, Math.floor(app.clientWidth));
   const appInnerHeight = Math.max(0, Math.floor(app.clientHeight));
 
-  const dynamicSideMin = clamp(Math.floor(viewportW * 0.16), 120, 260);
+  const dynamicSideMin = clamp(Math.floor(viewportW * 0.12), 88, 160);
   root.style.setProperty("--side-min", `${dynamicSideMin}px`);
   const mainShellHeight = Math.max(0, appInnerHeight);
   root.style.setProperty("--main-shell-height", `${mainShellHeight}px`);
@@ -2122,6 +2139,26 @@ function updateLayout() {
   if (Number.isFinite(nextBoardSize) && nextBoardSize > 0) {
     root.style.setProperty("--board-size", `${nextBoardSize}px`);
   }
+}
+
+function cancelPendingPlacement() {
+  const pending = state.pendingPlacement;
+  if (!pending) {
+    clearSelection("已取消当前选择");
+    return;
+  }
+
+  state.pendingPlacement = null;
+  state.selectedPieceId = pending.move.pieceId;
+  state.selectedRotation = Number(pending.move.rotation) || 0;
+  state.selectedFlipped = Boolean(pending.move.flipped);
+  state.previewAnchor = {
+    row: Number(pending.move.anchorRow),
+    col: Number(pending.move.anchorCol),
+  };
+  state.preview = buildPreview(pending.move);
+  state.message = "已撤回确认，可继续调整这一步";
+  render();
 }
 
 function buildRealtimeSyncMessage(room) {
@@ -2659,9 +2696,7 @@ function bindEvents() {
   state.dom.buttons.rotate.addEventListener("click", rotateSelectedPiece);
   state.dom.buttons.flip.addEventListener("click", flipSelectedPiece);
   state.dom.buttons.place.addEventListener("click", placePiece);
-  state.dom.buttons.cancel.addEventListener("click", () => {
-    clearSelection("已取消当前选择");
-  });
+  state.dom.buttons.cancel.addEventListener("click", cancelPendingPlacement);
   state.dom.buttons.copyRoomLink?.addEventListener("click", copyRoomLink);
 
   state.dom.waiting.backBtn?.addEventListener("click", handleWaitingBack);
