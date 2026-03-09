@@ -332,6 +332,56 @@ body {
   gap: 10px;
 }
 
+.lobby-auth-guest,
+.lobby-room-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lobby-auth-actions,
+.lobby-account-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.lobby-auth-logged {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lobby-account-summary {
+  border-radius: 18px;
+  border: 1px solid rgba(183, 201, 232, 0.6);
+  background: linear-gradient(180deg, rgba(245, 248, 255, 0.95), rgba(234, 242, 252, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lobby-account-summary p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: #5f6f87;
+}
+
+.lobby-account-summary strong {
+  font-size: 21px;
+  line-height: 1.1;
+  color: #253a58;
+}
+
+.lobby-account-summary span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #486184;
+}
+
 .lobby-field {
   display: flex;
   flex-direction: column;

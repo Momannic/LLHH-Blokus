@@ -24,6 +24,9 @@ const {
 const {
   createSupabaseClient: sbCreateSupabaseClient,
   ensureAnonymousAuth: sbEnsureAnonymousAuth,
+  createAccount: sbCreateAccount,
+  loginAccount: sbLoginAccount,
+  getAccountById: sbGetAccountById,
   createRoom: sbCreateRoom,
   loadRoom: sbLoadRoom,
   updateRoomState: sbUpdateRoomState,
@@ -39,9 +42,13 @@ const MAGNIFIER_MARGIN = 8;
 const GAME_MODE_TWO_PLAYER = "2p";
 const GAME_MODE_FOUR_PLAYER = "4p";
 const ROOM_GAME_STATE_VERSION = 3;
+const ACCOUNT_STORAGE_KEY = "blokus.currentAccount.v1";
+const LAST_ROOM_STORAGE_KEY = "blokus.lastRoom.v1";
 const LOBBY_ACTION_NONE = "none";
 const LOBBY_ACTION_CREATE = "create";
 const LOBBY_ACTION_JOIN = "join";
+const LOBBY_ACCOUNT_ACTION_CREATE = "createAccount";
+const LOBBY_ACCOUNT_ACTION_LOGIN = "loginAccount";
 
 const COLOR_OWNER_BY_MODE = {
   [GAME_MODE_TWO_PLAYER]: {
@@ -200,9 +207,14 @@ const state = {
   roomConfig: createDefaultRoomConfig(GAME_MODE_TWO_PLAYER),
   lobby: {
     mode: GAME_MODE_TWO_PLAYER,
+    roomAction: LOBBY_ACTION_NONE,
+    accountAction: LOBBY_ACTION_NONE,
+    status: "先新建账号或登录账号，再创建或加入房间",
+  },
+  account: {
+    accountId: "",
     nickname: "",
-    action: LOBBY_ACTION_NONE,
-    status: "请填写昵称，选择模式后创建或加入房间",
+    loggedIn: false,
   },
   selectedPieceId: null,
   selectedRotation: 0,
@@ -354,6 +366,82 @@ function normalizeRoomCode(value) {
     .replace(/\s+/g, "");
 }
 
+function normalizeAccountId(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9_-]/g, "");
+}
+
+function normalizeNickname(value, fallback = "玩家") {
+  const text = String(value || "").trim();
+  if (!text) {
+    return fallback;
+  }
+  return text.slice(0, 16);
+}
+
+function getCurrentAccountId() {
+  return state.account.loggedIn ? state.account.accountId : "";
+}
+
+function persistCurrentAccount() {
+  if (!state.account.loggedIn || !state.account.accountId) {
+    localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(
+    ACCOUNT_STORAGE_KEY,
+    JSON.stringify({
+      accountId: state.account.accountId,
+      nickname: state.account.nickname,
+      loggedIn: true,
+    })
+  );
+}
+
+function restoreCurrentAccount() {
+  try {
+    const raw = localStorage.getItem(ACCOUNT_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    const accountId = normalizeAccountId(parsed?.accountId);
+    if (!accountId) {
+      return;
+    }
+    state.account.accountId = accountId;
+    state.account.nickname = normalizeNickname(parsed?.nickname, "玩家");
+    state.account.loggedIn = true;
+  } catch (_error) {
+    localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+  }
+}
+
+function clearPersistedAccount() {
+  localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+}
+
+function persistLastRoom(roomCode) {
+  const normalized = normalizeRoomCode(roomCode);
+  if (!normalized) {
+    localStorage.removeItem(LAST_ROOM_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(LAST_ROOM_STORAGE_KEY, normalized);
+}
+
+function getPersistedLastRoom() {
+  return normalizeRoomCode(localStorage.getItem(LAST_ROOM_STORAGE_KEY) || "");
+}
+
+function clearPersistedLastRoom() {
+  localStorage.removeItem(LAST_ROOM_STORAGE_KEY);
+}
+
 function getDefaultNicknameBySeat(seat) {
   const match = typeof seat === "string" ? seat.match(/^player([1-4])$/) : null;
   const index = match ? Number(match[1]) : 1;
@@ -361,17 +449,7 @@ function getDefaultNicknameBySeat(seat) {
 }
 
 function getLobbyNicknameInputValue() {
-  const fromState = String(state.lobby.nickname || "").trim();
-  if (fromState) {
-    return fromState;
-  }
-  if (state.dom.lobby.nicknameInput) {
-    const fromInput = String(state.dom.lobby.nicknameInput.value || "").trim();
-    if (fromInput) {
-      return fromInput;
-    }
-  }
-  return "";
+  return normalizeNickname(state.account.nickname || "", "玩家");
 }
 
 function serializeRoomGameState(gameState, roomConfig) {
@@ -454,28 +532,28 @@ function parseRoomGameState(rawGameState, room) {
   }
 }
 
-function getRoleByRoom(room, userId) {
-  if (!room || !userId) {
+function getRoleByRoom(room, accountId) {
+  if (!room || !accountId) {
     return "none";
   }
 
   const parsed = parseRoomGameState(room.game_state, room);
   const seats = getPlayerSeatsByMode(parsed.config.mode);
   for (const seat of seats) {
-    if (parsed.config.playerUserMap[seat] === userId) {
+    if (parsed.config.playerUserMap[seat] === accountId) {
       return seat;
     }
   }
   return "spectator";
 }
 
-function getRoleByRoomConfig(config, userId) {
-  if (!userId) {
+function getRoleByRoomConfig(config, accountId) {
+  if (!accountId) {
     return "none";
   }
   const seats = getPlayerSeatsByMode(config.mode);
   for (const seat of seats) {
-    if (config.playerUserMap[seat] === userId) {
+    if (config.playerUserMap[seat] === accountId) {
       return seat;
     }
   }
@@ -538,14 +616,14 @@ function areAllJoinedPlayersReady(config = state.roomConfig) {
 }
 
 function getHostSeat(config = state.roomConfig, room = state.network.room) {
-  if (!room?.host_user_id) {
+  if (!config?.playerUserMap?.player1) {
     return "";
   }
-  return getPlayerSeatsByMode(config.mode).find((seat) => config.playerUserMap?.[seat] === room.host_user_id) || "";
+  return "player1";
 }
 
 function isCurrentUserHost() {
-  return Boolean(state.network.room?.host_user_id) && state.network.room.host_user_id === state.network.userId;
+  return state.network.role === "player1";
 }
 
 function canHostStartGame() {
@@ -557,6 +635,10 @@ function canHostStartGame() {
 }
 
 function getCannotOperateReason() {
+  if (!state.account.loggedIn) {
+    return "请先登录账号";
+  }
+
   if (!state.network.ready) {
     return "正在连接联机服务，请稍等";
   }
@@ -597,12 +679,21 @@ function setView(view) {
   state.view = "lobby";
 }
 
-function setLobbyAction(action) {
+function setLobbyRoomAction(action) {
   if (action !== LOBBY_ACTION_CREATE && action !== LOBBY_ACTION_JOIN) {
-    state.lobby.action = LOBBY_ACTION_NONE;
+    state.lobby.roomAction = LOBBY_ACTION_NONE;
     return;
   }
-  state.lobby.action = state.lobby.action === action ? LOBBY_ACTION_NONE : action;
+  state.lobby.roomAction = state.lobby.roomAction === action ? LOBBY_ACTION_NONE : action;
+}
+
+function setLobbyAccountAction(action) {
+  if (action !== LOBBY_ACCOUNT_ACTION_CREATE && action !== LOBBY_ACCOUNT_ACTION_LOGIN) {
+    state.lobby.accountAction = LOBBY_ACTION_NONE;
+    return;
+  }
+  state.lobby.accountAction =
+    state.lobby.accountAction === action ? LOBBY_ACTION_NONE : action;
 }
 
 function setLobbyMode(mode) {
@@ -628,11 +719,42 @@ function renderLobby() {
     return;
   }
 
+  const loggedIn = Boolean(state.account.loggedIn && state.account.accountId);
   lobby.mode2Btn.classList.toggle("is-active", state.lobby.mode === GAME_MODE_TWO_PLAYER);
   lobby.mode4Btn.classList.toggle("is-active", state.lobby.mode === GAME_MODE_FOUR_PLAYER);
 
-  const isCreateOpen = state.lobby.action === LOBBY_ACTION_CREATE;
-  const isJoinOpen = state.lobby.action === LOBBY_ACTION_JOIN;
+  const isAccountCreateOpen = state.lobby.accountAction === LOBBY_ACCOUNT_ACTION_CREATE;
+  const isAccountLoginOpen = state.lobby.accountAction === LOBBY_ACCOUNT_ACTION_LOGIN;
+  const isCreateOpen = state.lobby.roomAction === LOBBY_ACTION_CREATE;
+  const isJoinOpen = state.lobby.roomAction === LOBBY_ACTION_JOIN;
+
+  if (lobby.authGuest) {
+    lobby.authGuest.hidden = loggedIn;
+  }
+  if (lobby.authLogged) {
+    lobby.authLogged.hidden = !loggedIn;
+  }
+  if (lobby.roomEntry) {
+    lobby.roomEntry.hidden = !loggedIn;
+  }
+
+  if (lobby.accountCreateToggleBtn) {
+    lobby.accountCreateToggleBtn.classList.toggle("is-open", isAccountCreateOpen);
+    lobby.accountCreateToggleBtn.textContent = isAccountCreateOpen ? "取消新建" : "新建账号";
+  }
+  if (lobby.accountLoginToggleBtn) {
+    lobby.accountLoginToggleBtn.classList.toggle("is-open", isAccountLoginOpen);
+    lobby.accountLoginToggleBtn.textContent = isAccountLoginOpen ? "取消登录" : "登录账号";
+  }
+
+  if (lobby.accountCreatePanel) {
+    lobby.accountCreatePanel.classList.toggle("is-open", isAccountCreateOpen);
+    lobby.accountCreatePanel.setAttribute("aria-hidden", isAccountCreateOpen ? "false" : "true");
+  }
+  if (lobby.accountLoginPanel) {
+    lobby.accountLoginPanel.classList.toggle("is-open", isAccountLoginOpen);
+    lobby.accountLoginPanel.setAttribute("aria-hidden", isAccountLoginOpen ? "false" : "true");
+  }
 
   lobby.createPanel.classList.toggle("is-open", isCreateOpen);
   lobby.joinPanel.classList.toggle("is-open", isJoinOpen);
@@ -644,8 +766,13 @@ function renderLobby() {
   lobby.createToggleBtn.textContent = isCreateOpen ? "取消创建" : "创建房间";
   lobby.joinToggleBtn.textContent = isJoinOpen ? "取消加入" : "加入房间";
 
-  if (lobby.nicknameInput && lobby.nicknameInput.value !== state.lobby.nickname) {
-    lobby.nicknameInput.value = state.lobby.nickname;
+  if (lobby.currentNickname) {
+    lobby.currentNickname.textContent = state.account.nickname || "未登录";
+  }
+  if (lobby.currentAccountId) {
+    lobby.currentAccountId.textContent = state.account.accountId
+      ? `ID: ${state.account.accountId}`
+      : "ID: --";
   }
 
   if (lobby.statusText) {
@@ -653,7 +780,7 @@ function renderLobby() {
   }
 
   if (lobby.returnRoomBtn) {
-    const canReturnRoom = Boolean(state.network.roomId) && Boolean(state.network.room);
+    const canReturnRoom = loggedIn && Boolean(state.network.roomId || getPersistedLastRoom());
     lobby.returnRoomBtn.hidden = !canReturnRoom;
   }
 }
@@ -1892,7 +2019,7 @@ async function placePiece() {
           flipped: moveSnapshot.flipped,
           anchorRow: moveSnapshot.anchorRow,
           anchorCol: moveSnapshot.anchorCol,
-          createdBy: state.network.userId,
+          createdBy: getCurrentAccountId() || state.network.userId,
         }).catch((error) => {
           console.warn("记录 moves 日志失败:", error);
         });
@@ -2285,16 +2412,20 @@ function applyRoomSnapshot(room, options = {}) {
 
   state.network.room = room;
   state.network.roomId = room.id;
+  persistLastRoom(room.id);
   state.network.lastRoomUpdatedAt = room.updated_at || null;
   const parsedRoomState = parseRoomGameState(room.game_state, room);
   state.roomConfig = parsedRoomState.config;
   state.lobby.mode = parsedRoomState.config.mode;
   state.game = parsedRoomState.game;
-  state.network.role = getRoleByRoom(room, state.network.userId);
+  state.network.role = getRoleByRoom(room, getCurrentAccountId());
   if (/^player[1-4]$/.test(state.network.role)) {
-    state.lobby.nickname =
+    const nextNickname =
       parsedRoomState.config.playerNicknameMap[state.network.role] ||
+      state.account.nickname ||
       getDefaultNicknameBySeat(state.network.role);
+    state.account.nickname = nextNickname;
+    persistCurrentAccount();
   }
 
   clearTransientSelection();
@@ -2380,8 +2511,12 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
     playerReadyMap: { ...parsed.config.playerReadyMap },
   };
   const seats = getPlayerSeatsByMode(config.mode);
+  const accountId = getCurrentAccountId();
+  if (!accountId) {
+    throw new Error("请先登录账号");
+  }
 
-  let role = getRoleByRoomConfig(config, state.network.userId);
+  let role = getRoleByRoomConfig(config, accountId);
   let changed = false;
   const nickname = String(preferredNickname || "").trim();
   const canClaimSeat = (room.status || "waiting") === "waiting";
@@ -2389,7 +2524,7 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
   if (role === "spectator" && canClaimSeat) {
     const emptySeat = seats.find((seat) => !config.playerUserMap[seat]);
     if (emptySeat) {
-      config.playerUserMap[emptySeat] = state.network.userId;
+      config.playerUserMap[emptySeat] = accountId;
       config.playerNicknameMap[emptySeat] = nickname || getDefaultNicknameBySeat(emptySeat);
       config.playerReadyMap[emptySeat] = false;
       role = emptySeat;
@@ -2404,14 +2539,10 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
   }
 
   const expectedStatus = getExpectedRoomStatusByConfig(parsed.game, config, room.status);
-  const expectedHost = config.playerUserMap.player1 || room.host_user_id || null;
-  const expectedGuest = config.playerUserMap.player2 || room.guest_user_id || null;
   const shouldUpdateRoom =
     changed ||
     room.status !== expectedStatus ||
-    room.current_turn_color !== parsed.game.currentTurnColor ||
-    room.host_user_id !== expectedHost ||
-    room.guest_user_id !== expectedGuest;
+    room.current_turn_color !== parsed.game.currentTurnColor;
 
   if (!shouldUpdateRoom) {
     return {
@@ -2422,8 +2553,6 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
   }
 
   const payload = {
-    host_user_id: expectedHost,
-    guest_user_id: expectedGuest,
     status: expectedStatus,
     current_turn_color: parsed.game.currentTurnColor,
     game_state: serializeRoomGameState(parsed.game, config),
@@ -2451,7 +2580,7 @@ async function claimSeatAndMaybeUpdateRoom(room, preferredNickname) {
     const latestParsed = parseRoomGameState(latest.game_state, latest);
     return {
       room: latest,
-      role: getRoleByRoomConfig(latestParsed.config, state.network.userId),
+      role: getRoleByRoomConfig(latestParsed.config, accountId),
       config: latestParsed.config,
     };
   }
@@ -2463,6 +2592,13 @@ async function createOnlineRoom(options = {}) {
   const nickname = String(
     options.nickname !== undefined ? options.nickname : getLobbyNicknameInputValue()
   ).trim();
+  const accountId = getCurrentAccountId();
+
+  if (!accountId) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return false;
+  }
 
   if (!roomCode) {
     updateLobbyStatus("创建失败：房间码不能为空");
@@ -2493,7 +2629,7 @@ async function createOnlineRoom(options = {}) {
   try {
     const initialGame = createInitialGameState();
     const roomConfig = createDefaultRoomConfig(mode);
-    roomConfig.playerUserMap.player1 = state.network.userId;
+    roomConfig.playerUserMap.player1 = accountId;
     roomConfig.playerNicknameMap.player1 = nickname || getDefaultNicknameBySeat("player1");
     const initialStatus = getExpectedRoomStatusByConfig(initialGame, roomConfig, "waiting");
     const room = await sbCreateRoom(state.network.client, {
@@ -2534,6 +2670,11 @@ async function joinRoomByCode(roomIdInput, nicknameInput) {
   const nickname = String(
     nicknameInput !== undefined ? nicknameInput : getLobbyNicknameInputValue()
   ).trim();
+  if (!getCurrentAccountId()) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return false;
+  }
 
   if (!roomId) {
     updateLobbyStatus("加入失败：房间码不能为空");
@@ -2568,6 +2709,12 @@ async function joinRoomByCode(roomIdInput, nicknameInput) {
     updateLobbyStatus(`加入成功：${resolved.room.id}`);
     return true;
   } catch (error) {
+    if (String(error.message || "").includes("房间不存在")) {
+      clearPersistedLastRoom();
+      if (!getRoomIdFromUrl() || normalizeRoomCode(getRoomIdFromUrl()) === roomId) {
+        setRoomIdToUrl("");
+      }
+    }
     state.message = `加入房间失败：${error.message || String(error)}`;
     updateLobbyStatus(state.message);
     render();
@@ -2647,16 +2794,34 @@ function handleWaitingBack() {
 }
 
 async function handleLobbyReturnRoom() {
-  if (!state.network.roomId) {
+  if (!state.account.loggedIn) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return;
+  }
+
+  const targetRoom = state.network.roomId || getPersistedLastRoom();
+  if (!targetRoom) {
+    updateLobbyStatus("没有可恢复的房间记录");
+    render();
+    return;
+  }
+
+  if (state.network.roomId !== targetRoom) {
+    const ok = await joinRoomByCode(targetRoom, state.account.nickname);
+    if (ok) {
+      updateLobbyStatus(`已返回房间 ${targetRoom}`);
+    }
+    render();
     return;
   }
 
   if (!state.network.room && state.network.client) {
     try {
-      const latest = await sbLoadRoom(state.network.client, state.network.roomId);
+      const latest = await sbLoadRoom(state.network.client, targetRoom);
       if (latest) {
         applyRoomSnapshot(latest, {
-          message: `已返回房间 ${state.network.roomId}`,
+          message: `已返回房间 ${targetRoom}`,
           fromRealtime: false,
         });
         return;
@@ -2668,6 +2833,7 @@ async function handleLobbyReturnRoom() {
 
   if (!state.network.room) {
     state.message = "当前房间不可用，请重新加入";
+    clearPersistedLastRoom();
     render();
     return;
   }
@@ -2741,41 +2907,219 @@ async function startGameFromWaitingRoom() {
 
 function handleLobbyModeChange(mode) {
   setLobbyMode(mode);
+  localStorage.setItem("blokus.lobbyMode.v1", normalizeGameMode(mode));
   render();
 }
 
-function handleLobbyNicknameInput(event) {
-  state.lobby.nickname = String(event.target.value || "").trim();
+function applyLoggedInAccount(account) {
+  state.account.accountId = normalizeAccountId(account.accountId);
+  state.account.nickname = normalizeNickname(account.nickname, "玩家");
+  state.account.loggedIn = true;
+  persistCurrentAccount();
+  state.lobby.accountAction = LOBBY_ACTION_NONE;
+  updateLobbyStatus(`已登录：${state.account.nickname}`);
+}
+
+function resetRoomContextOnAccountChange() {
+  clearRoomSubscription();
+  state.network.roomId = null;
+  state.network.room = null;
+  state.network.role = "none";
+  state.network.lastRoomUpdatedAt = null;
+  state.waitingDismissed = false;
+  state.roomConfig = createDefaultRoomConfig(state.lobby.mode);
+  state.game = createInitialGameState();
+  clearTransientSelection();
+  setRoomIdToUrl("");
+  clearPersistedLastRoom();
+}
+
+function switchAccountAndBackToLobby(statusMessage) {
+  resetRoomContextOnAccountChange();
+  state.account.accountId = "";
+  state.account.nickname = "";
+  state.account.loggedIn = false;
+  clearPersistedAccount();
+  state.lobby.accountAction = LOBBY_ACTION_NONE;
+  state.lobby.roomAction = LOBBY_ACTION_NONE;
+  setView("lobby");
+  if (statusMessage) {
+    updateLobbyStatus(statusMessage);
+  }
+  render();
+}
+
+function openLobbyAccountCreatePanel() {
+  setLobbyAccountAction(LOBBY_ACCOUNT_ACTION_CREATE);
+  if (state.lobby.accountAction !== LOBBY_ACTION_NONE) {
+    state.lobby.roomAction = LOBBY_ACTION_NONE;
+  }
+  render();
+}
+
+function openLobbyAccountLoginPanel() {
+  setLobbyAccountAction(LOBBY_ACCOUNT_ACTION_LOGIN);
+  if (state.lobby.accountAction !== LOBBY_ACTION_NONE) {
+    state.lobby.roomAction = LOBBY_ACTION_NONE;
+  }
+  render();
 }
 
 function openLobbyCreatePanel() {
-  setLobbyAction(LOBBY_ACTION_CREATE);
+  if (!state.account.loggedIn) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return;
+  }
+  setLobbyRoomAction(LOBBY_ACTION_CREATE);
+  if (state.lobby.roomAction !== LOBBY_ACTION_NONE) {
+    state.lobby.accountAction = LOBBY_ACTION_NONE;
+  }
   render();
 }
 
 function openLobbyJoinPanel() {
-  setLobbyAction(LOBBY_ACTION_JOIN);
+  if (!state.account.loggedIn) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return;
+  }
+  setLobbyRoomAction(LOBBY_ACTION_JOIN);
+  if (state.lobby.roomAction !== LOBBY_ACTION_NONE) {
+    state.lobby.accountAction = LOBBY_ACTION_NONE;
+  }
+  render();
+}
+
+async function handleCreateAccountConfirm() {
+  if (!(await ensureNetworkReady())) {
+    updateLobbyStatus(state.message);
+    render();
+    return;
+  }
+
+  if (typeof sbCreateAccount !== "function") {
+    updateLobbyStatus("账号接口未启用，请先更新 supabase.js");
+    render();
+    return;
+  }
+
+  const nickname = normalizeNickname(state.dom.lobby.createAccountNicknameInput?.value || "", "玩家");
+  const accountId = normalizeAccountId(state.dom.lobby.createAccountIdInput?.value || "");
+  const pin = String(state.dom.lobby.createAccountPinInput?.value || "").trim();
+
+  if (!accountId) {
+    updateLobbyStatus("创建失败：账号ID不能为空");
+    render();
+    return;
+  }
+  if (!pin) {
+    updateLobbyStatus("创建失败：PIN不能为空");
+    render();
+    return;
+  }
+
+  try {
+    const account = await sbCreateAccount(state.network.client, {
+      accountId,
+      nickname,
+      pin,
+    });
+    applyLoggedInAccount({
+      accountId: account.account_id,
+      nickname: account.nickname || nickname,
+    });
+    if (state.dom.lobby.createAccountPinInput) {
+      state.dom.lobby.createAccountPinInput.value = "";
+    }
+    state.lobby.accountAction = LOBBY_ACTION_NONE;
+    render();
+  } catch (error) {
+    updateLobbyStatus(`创建账号失败：${error.message || String(error)}`);
+    render();
+  }
+}
+
+async function handleLoginAccountConfirm() {
+  if (!(await ensureNetworkReady())) {
+    updateLobbyStatus(state.message);
+    render();
+    return;
+  }
+
+  if (typeof sbLoginAccount !== "function") {
+    updateLobbyStatus("账号接口未启用，请先更新 supabase.js");
+    render();
+    return;
+  }
+
+  const accountId = normalizeAccountId(state.dom.lobby.loginAccountIdInput?.value || "");
+  const pin = String(state.dom.lobby.loginAccountPinInput?.value || "").trim();
+
+  if (!accountId || !pin) {
+    updateLobbyStatus("登录失败：请输入账号ID和PIN");
+    render();
+    return;
+  }
+
+  try {
+    const account = await sbLoginAccount(state.network.client, {
+      accountId,
+      pin,
+    });
+    applyLoggedInAccount({
+      accountId: account.account_id,
+      nickname: account.nickname || "玩家",
+    });
+    if (state.dom.lobby.loginAccountPinInput) {
+      state.dom.lobby.loginAccountPinInput.value = "";
+    }
+    state.lobby.accountAction = LOBBY_ACTION_NONE;
+    render();
+  } catch (error) {
+    updateLobbyStatus(`登录失败：${error.message || String(error)}`);
+    render();
+  }
+}
+
+function handleSwitchAccount() {
+  switchAccountAndBackToLobby("已退出当前账号，请重新登录");
+}
+
+function handleQuickCreateAccount() {
+  switchAccountAndBackToLobby("请先创建新账号");
+  state.lobby.accountAction = LOBBY_ACCOUNT_ACTION_CREATE;
   render();
 }
 
 async function handleLobbyCreateConfirm() {
+  if (!state.account.loggedIn) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return;
+  }
   const roomCode = state.dom.lobby.createRoomCodeInput?.value || "";
   const ok = await createOnlineRoom({
     roomCode,
     mode: state.lobby.mode,
-    nickname: getLobbyNicknameInputValue(),
+    nickname: state.account.nickname,
   });
   if (ok) {
-    setLobbyAction(LOBBY_ACTION_NONE);
+    setLobbyRoomAction(LOBBY_ACTION_NONE);
     render();
   }
 }
 
 async function handleLobbyJoinConfirm() {
+  if (!state.account.loggedIn) {
+    updateLobbyStatus("请先登录账号");
+    render();
+    return;
+  }
   const roomCode = state.dom.lobby.joinRoomCodeInput?.value || "";
-  const ok = await joinRoomByCode(roomCode, getLobbyNicknameInputValue());
+  const ok = await joinRoomByCode(roomCode, state.account.nickname);
   if (ok) {
-    setLobbyAction(LOBBY_ACTION_NONE);
+    setLobbyRoomAction(LOBBY_ACTION_NONE);
     render();
   }
 }
@@ -2803,19 +3147,31 @@ function bindEvents() {
   state.dom.waiting.startBtn?.addEventListener("click", startGameFromWaitingRoom);
   state.dom.lobby.returnRoomBtn?.addEventListener("click", handleLobbyReturnRoom);
 
-  if (state.dom.lobby.nicknameInput) {
-    state.dom.lobby.nicknameInput.addEventListener("input", handleLobbyNicknameInput);
-  }
+  state.dom.lobby.accountCreateToggleBtn?.addEventListener("click", openLobbyAccountCreatePanel);
+  state.dom.lobby.accountLoginToggleBtn?.addEventListener("click", openLobbyAccountLoginPanel);
+  state.dom.lobby.createAccountBackBtn?.addEventListener("click", () => {
+    setLobbyAccountAction(LOBBY_ACTION_NONE);
+    render();
+  });
+  state.dom.lobby.loginAccountBackBtn?.addEventListener("click", () => {
+    setLobbyAccountAction(LOBBY_ACTION_NONE);
+    render();
+  });
+  state.dom.lobby.createAccountConfirmBtn?.addEventListener("click", handleCreateAccountConfirm);
+  state.dom.lobby.loginAccountConfirmBtn?.addEventListener("click", handleLoginAccountConfirm);
+  state.dom.lobby.switchAccountBtn?.addEventListener("click", handleSwitchAccount);
+  state.dom.lobby.quickCreateAccountBtn?.addEventListener("click", handleQuickCreateAccount);
+
   state.dom.lobby.mode2Btn?.addEventListener("click", () => handleLobbyModeChange(GAME_MODE_TWO_PLAYER));
   state.dom.lobby.mode4Btn?.addEventListener("click", () => handleLobbyModeChange(GAME_MODE_FOUR_PLAYER));
   state.dom.lobby.createToggleBtn?.addEventListener("click", openLobbyCreatePanel);
   state.dom.lobby.joinToggleBtn?.addEventListener("click", openLobbyJoinPanel);
   state.dom.lobby.createBackBtn?.addEventListener("click", () => {
-    setLobbyAction(LOBBY_ACTION_NONE);
+    setLobbyRoomAction(LOBBY_ACTION_NONE);
     render();
   });
   state.dom.lobby.joinBackBtn?.addEventListener("click", () => {
-    setLobbyAction(LOBBY_ACTION_NONE);
+    setLobbyRoomAction(LOBBY_ACTION_NONE);
     render();
   });
   state.dom.lobby.createConfirmBtn?.addEventListener("click", handleLobbyCreateConfirm);
@@ -2840,7 +3196,26 @@ function cacheDom() {
   state.dom.floatingPieceGrid = document.getElementById("floatingPieceGrid");
 
   state.dom.lobby = {
-    nicknameInput: document.getElementById("lobbyNicknameInput"),
+    authGuest: document.getElementById("lobbyAuthGuest"),
+    authLogged: document.getElementById("lobbyAuthLogged"),
+    roomEntry: document.getElementById("lobbyRoomEntry"),
+    accountCreateToggleBtn: document.getElementById("lobbyAccountCreateToggleBtn"),
+    accountLoginToggleBtn: document.getElementById("lobbyAccountLoginToggleBtn"),
+    accountCreatePanel: document.getElementById("lobbyAccountCreatePanel"),
+    accountLoginPanel: document.getElementById("lobbyAccountLoginPanel"),
+    createAccountNicknameInput: document.getElementById("lobbyCreateAccountNicknameInput"),
+    createAccountIdInput: document.getElementById("lobbyCreateAccountIdInput"),
+    createAccountPinInput: document.getElementById("lobbyCreateAccountPinInput"),
+    loginAccountIdInput: document.getElementById("lobbyLoginAccountIdInput"),
+    loginAccountPinInput: document.getElementById("lobbyLoginAccountPinInput"),
+    createAccountBackBtn: document.getElementById("lobbyCreateAccountBackBtn"),
+    loginAccountBackBtn: document.getElementById("lobbyLoginAccountBackBtn"),
+    createAccountConfirmBtn: document.getElementById("lobbyCreateAccountConfirmBtn"),
+    loginAccountConfirmBtn: document.getElementById("lobbyLoginAccountConfirmBtn"),
+    currentNickname: document.getElementById("lobbyCurrentNickname"),
+    currentAccountId: document.getElementById("lobbyCurrentAccountId"),
+    switchAccountBtn: document.getElementById("lobbySwitchAccountBtn"),
+    quickCreateAccountBtn: document.getElementById("lobbyQuickCreateAccountBtn"),
     mode2Btn: document.getElementById("lobbyMode2Btn"),
     mode4Btn: document.getElementById("lobbyMode4Btn"),
     createToggleBtn: document.getElementById("lobbyCreateToggleBtn"),
@@ -2933,16 +3308,53 @@ async function init() {
   createPiecePool();
   bindEvents();
   registerStateLayerApi();
+
+  const savedMode = normalizeGameMode(localStorage.getItem("blokus.lobbyMode.v1") || GAME_MODE_TWO_PLAYER);
+  state.lobby.mode = savedMode;
+  restoreCurrentAccount();
+
   setView("lobby");
   updateLayout();
-  const presetRoom = getRoomIdFromUrl();
-  if (presetRoom && state.dom.lobby.joinRoomCodeInput) {
-    state.dom.lobby.joinRoomCodeInput.value = presetRoom;
-    updateLobbyStatus("已从链接读取房间码，点击“加入房间”后确认加入");
+  const presetRoom = normalizeRoomCode(getRoomIdFromUrl());
+  const persistedRoom = getPersistedLastRoom();
+  const roomToRecover = presetRoom || persistedRoom;
+  if (state.dom.lobby.joinRoomCodeInput && roomToRecover) {
+    state.dom.lobby.joinRoomCodeInput.value = roomToRecover;
+  }
+  if (state.account.loggedIn) {
+    updateLobbyStatus(`欢迎回来，${state.account.nickname}`);
+  } else if (roomToRecover) {
+    updateLobbyStatus("检测到房间码，请先登录账号后恢复房间");
   }
   render();
 
-  await ensureNetworkReady();
+  const networkReady = await ensureNetworkReady();
+  if (!networkReady) {
+    return;
+  }
+
+  if (state.account.loggedIn && typeof sbGetAccountById === "function") {
+    try {
+      const profile = await sbGetAccountById(state.network.client, state.account.accountId);
+      if (profile) {
+        applyLoggedInAccount({
+          accountId: profile.account_id,
+          nickname: profile.nickname || state.account.nickname,
+        });
+      } else {
+        switchAccountAndBackToLobby("账号不存在，请重新登录或创建账号");
+      }
+    } catch (_error) {
+      updateLobbyStatus("账号校验失败，已使用本地缓存账号");
+      render();
+    }
+  }
+
+  if (state.account.loggedIn && roomToRecover) {
+    updateLobbyStatus(`正在恢复房间 ${roomToRecover}...`);
+    render();
+    await joinRoomByCode(roomToRecover, state.account.nickname);
+  }
 }
 
 init();

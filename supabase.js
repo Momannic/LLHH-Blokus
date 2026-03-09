@@ -98,6 +98,103 @@ function generateRoomId(length = 8) {
   return output;
 }
 
+/**
+ * accounts 表建议字段：
+ * - account_id text primary key
+ * - nickname text not null
+ * - pin text not null （最小可用版；生产建议使用 pin_hash）
+ * - created_at timestamptz default now()
+ * - updated_at timestamptz default now()
+ */
+async function getAccountById(client, accountId) {
+  const normalizedId = String(accountId || "")
+    .trim()
+    .toUpperCase();
+
+  if (!normalizedId) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from("accounts")
+    .select("account_id,nickname,created_at,updated_at")
+    .eq("account_id", normalizedId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+async function createAccount(client, payload) {
+  const accountId = String(payload?.accountId || "")
+    .trim()
+    .toUpperCase();
+  const nickname = String(payload?.nickname || "").trim();
+  const pin = String(payload?.pin || "").trim();
+
+  if (!accountId) {
+    throw new Error("账号ID不能为空");
+  }
+  if (!pin) {
+    throw new Error("PIN不能为空");
+  }
+
+  const insertPayload = {
+    account_id: accountId,
+    nickname: nickname || "玩家",
+    pin,
+  };
+
+  const { data, error } = await client
+    .from("accounts")
+    .insert(insertPayload)
+    .select("account_id,nickname,created_at,updated_at")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      throw new Error("账号ID已存在，请换一个");
+    }
+    throw error;
+  }
+
+  return data;
+}
+
+async function loginAccount(client, payload) {
+  const accountId = String(payload?.accountId || "")
+    .trim()
+    .toUpperCase();
+  const pin = String(payload?.pin || "").trim();
+
+  if (!accountId || !pin) {
+    throw new Error("请输入账号ID和PIN");
+  }
+
+  const { data, error } = await client
+    .from("accounts")
+    .select("account_id,nickname,pin,created_at,updated_at")
+    .eq("account_id", accountId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (!data || String(data.pin || "") !== pin) {
+    throw new Error("账号ID或PIN不正确");
+  }
+
+  return {
+    account_id: data.account_id,
+    nickname: data.nickname || "玩家",
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
+}
+
 async function loadRoom(client, roomId) {
   const { data, error } = await client
     .from("rooms")
@@ -259,6 +356,9 @@ window.BlokusSupabase = {
   SUPABASE_SDK_URL,
   createSupabaseClient,
   ensureAnonymousAuth,
+  getAccountById,
+  createAccount,
+  loginAccount,
   createRoom,
   joinRoom,
   loadRoom,
