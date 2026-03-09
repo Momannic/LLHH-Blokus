@@ -2142,7 +2142,7 @@ function updateLayout() {
   const sideScale = clamp(sideTarget / 140, 0.72, 1.08);
   const heightScale = clamp(appH / 430, 0.72, 1.08);
   const uiScale = clamp(Math.min(sideScale, heightScale), 0.7, 1.08);
-  const gap = Math.round(clamp(4 * uiScale, 3, 8));
+  const gap = Math.round(clamp(3.4 * uiScale, 2, 6));
   const minSide = Math.round(clamp(88 * uiScale, 72, 120));
 
   const maxByHeight = Math.max(0, appH - 2);
@@ -2166,15 +2166,15 @@ function updateLayout() {
   root.style.setProperty("--panel-gap", `${gap}px`);
   root.style.setProperty("--side-panel-width", `${side}px`);
   root.style.setProperty("--board-size", `${boardSize}px`);
-  root.style.setProperty("--panel-padding", `${Math.round(clamp(5 * uiScale, 3, 8))}px`);
-  root.style.setProperty("--panel-radius", `${Math.round(clamp(12 * uiScale, 8, 16))}px`);
-  root.style.setProperty("--card-radius", `${Math.round(clamp(9 * uiScale, 6, 13))}px`);
-  root.style.setProperty("--card-padding", `${Math.round(clamp(4 * uiScale, 2, 6))}px`);
-  root.style.setProperty("--title-size", `${clamp(10 * uiScale, 8, 14).toFixed(2)}px`);
-  root.style.setProperty("--body-size", `${clamp(8 * uiScale, 6.6, 11).toFixed(2)}px`);
-  root.style.setProperty("--button-height", `${Math.round(clamp(24 * uiScale, 18, 34))}px`);
-  root.style.setProperty("--piece-scale", clamp(side / 135, 0.62, 1.08).toFixed(3));
-  root.style.setProperty("--piece-gap", `${Math.max(1, Math.round(clamp(1.4 * uiScale, 1, 3)))}px`);
+  root.style.setProperty("--panel-padding", `${Math.round(clamp(4.2 * uiScale, 2, 6))}px`);
+  root.style.setProperty("--panel-radius", `${Math.round(clamp(11 * uiScale, 7, 15))}px`);
+  root.style.setProperty("--card-radius", `${Math.round(clamp(8 * uiScale, 5, 12))}px`);
+  root.style.setProperty("--card-padding", `${Math.round(clamp(3.1 * uiScale, 2, 5))}px`);
+  root.style.setProperty("--title-size", `${clamp(9.2 * uiScale, 7.2, 13).toFixed(2)}px`);
+  root.style.setProperty("--body-size", `${clamp(7.1 * uiScale, 5.9, 10).toFixed(2)}px`);
+  root.style.setProperty("--button-height", `${Math.round(clamp(21 * uiScale, 16, 30))}px`);
+  root.style.setProperty("--piece-scale", clamp(side / 102, 0.9, 1.3).toFixed(3));
+  root.style.setProperty("--piece-gap", `${Math.max(1, Math.round(clamp(1.1 * uiScale, 1, 2)))}px`);
 }
 
 function scheduleGameLayoutRefresh() {
