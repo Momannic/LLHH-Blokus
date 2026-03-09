@@ -685,7 +685,7 @@ function renderWaiting() {
     if (joined) {
       name.textContent = seat === hostSeat ? `${nickname}（房主）` : nickname;
     } else {
-      name.textContent = `${getDefaultNicknameBySeat(seat)}（等待加入）`;
+      name.textContent = getDefaultNicknameBySeat(seat);
     }
 
     const badge = document.createElement("span");

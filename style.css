@@ -585,7 +585,7 @@ body {
 .waiting-players-card h3 {
   margin: 0 0 10px;
   color: #263a57;
-  font-size: clamp(24px, 4.8vw, 34px);
+  font-size: clamp(16px, 3.8vw, 26px);
 }
 
 .waiting-players-list {
@@ -598,25 +598,34 @@ body {
   border-radius: 16px;
   border: 1px solid rgba(195, 207, 228, 0.65);
   background: rgba(255, 255, 255, 0.86);
-  min-height: 62px;
+  min-height: 56px;
   padding: 0 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   transition: transform 120ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
 .waiting-player-name {
-  font-size: clamp(22px, 4.5vw, 30px);
+  min-width: 0;
+  flex: 1;
+  font-size: clamp(16px, 4vw, 24px);
   font-weight: 800;
   color: #2d4362;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .waiting-status-badge {
   border-radius: 999px;
-  padding: 7px 15px;
-  font-size: clamp(20px, 4.2vw, 28px);
+  padding: 6px 12px;
+  font-size: clamp(14px, 3.5vw, 20px);
   font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .waiting-status-badge.status-ready {
@@ -638,7 +647,7 @@ body {
   margin: 0;
   text-align: center;
   color: #6b7d99;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -653,10 +662,43 @@ body {
   min-height: 58px;
   border-radius: 20px;
   color: #fff;
-  font-size: clamp(28px, 5.6vw, 38px);
+  font-size: clamp(20px, 5vw, 30px);
   font-weight: 900;
   box-shadow: 0 8px 16px rgba(115, 126, 156, 0.24);
   transition: transform 120ms ease, box-shadow 180ms ease, filter 180ms ease, opacity 180ms ease;
+}
+
+@media (max-width: 430px) {
+  .waiting-shell {
+    padding: 12px 10px;
+    gap: 10px;
+  }
+
+  .waiting-room-code-card p {
+    font-size: 16px;
+  }
+
+  .waiting-room-code-card strong {
+    font-size: clamp(34px, 10vw, 52px);
+  }
+
+  .waiting-players-card {
+    padding: 10px;
+  }
+
+  .waiting-player-row {
+    min-height: 52px;
+    padding: 0 10px;
+  }
+
+  .waiting-player-name {
+    font-size: 20px;
+  }
+
+  .waiting-status-badge {
+    font-size: 16px;
+    padding: 6px 10px;
+  }
 }
 
 .waiting-action-btn.ready {
